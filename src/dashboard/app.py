@@ -42,6 +42,8 @@ CONTACTS_PATH = PROJECT_ROOT / "data" / "grant_contacts.json"
 CONTACTS_EXAMPLE = PROJECT_ROOT / "data" / "grant_contacts.example.json"
 GRANT_DASHBOARD_PATH = PROJECT_ROOT / "data" / "grant_project_dashboard.json"
 GRANT_DASHBOARD_EXAMPLE = PROJECT_ROOT / "data" / "grant_project_dashboard.example.json"
+KKT_PATH = PROJECT_ROOT / "data" / "grant_kkt.json"
+KKT_EXAMPLE = PROJECT_ROOT / "data" / "grant_kkt.example.json"
 
 # Папка «Паспорт»: паспорт проекта и краткая история диалогов (автосохранение раз в 15 мин)
 PASSPORT_DIR = PROJECT_ROOT / "Паспорт"
@@ -169,9 +171,16 @@ def _send_to_agent(prompt: str) -> str | None:
     if not conv_id:
         return "Не удалось подключиться к агенту. " + _agent_config_hint()
     try:
-        from src.yandex_ai_client import ask_in_conversation
+        from src.yandex_ai_client import ask, ask_in_conversation
         reply = ask_in_conversation(conv_id, prompt)
-        _log_audit(conv_id, len(prompt), len(reply))
+        if reply and "API вернул пустой ответ" in reply:
+            try:
+                fallback = ask(prompt)
+                if fallback and fallback.strip():
+                    return fallback + "\n\n_(Ответ получен одним запросом без сессии — при проблемах с диалогом.)_"
+            except Exception as e:
+                logger.debug("Fallback ask() не удался: %s", e)
+        _log_audit(conv_id, len(prompt), len(reply or ""))
         return reply
     except Exception as e:
         logger.exception("Ошибка запроса к агенту: %s", e)
@@ -281,6 +290,57 @@ def _content_schedule(block_id: str) -> None:
 
 def block_schedule() -> None:
     _block_with_settings("📅 Ближайшие сроки по гранту", "schedule", _content_schedule, _settings_schedule)
+
+
+# ---------- Блок: Ключевые контрольные точки (ККТ), АНО «Гранты Ямала» ----------
+def _load_kkt() -> list[dict]:
+    """Загружает ККТ из data/grant_kkt.json или из примера."""
+    for path in (KKT_PATH, KKT_EXAMPLE):
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                return data.get("points", data) if isinstance(data, dict) else data
+            except Exception as e:
+                logger.warning("Ошибка чтения ККТ %s: %s", path.name, e)
+    return []
+
+
+def _settings_kkt(block_id: str) -> None:
+    st.caption(
+        "ККТ создаются и редактируются в личном кабинете АНО «Гранты Ямала» (раздел «Ключевые контрольные точки» / «Мониторинг»). "
+        "На дашборде отображается локальная копия из data/grant_kkt.json."
+    )
+
+
+def _content_kkt(block_id: str) -> None:
+    points = _load_kkt()
+    if not points:
+        st.info("Добавьте данные в data/grant_kkt.json (можно скопировать из data/grant_kkt.example.json).")
+        return
+    today = datetime.utcnow().date()
+    rows = []
+    for i, p in enumerate(points, 1):
+        desc = p.get("description", "")
+        date_end = (p.get("date_end") or "").strip()
+        expected = (p.get("expected_result") or "").strip()
+        status = p.get("status", "not_started")
+        st_label = STATUS_LABELS.get(status, status)
+        overdue = ""
+        if date_end:
+            try:
+                d = datetime.strptime(date_end[:10], "%Y-%m-%d").date()
+                if d < today and status != "done":
+                    overdue = " (просрочено)"
+            except ValueError:
+                pass
+        rows.append({"№": i, "Контрольная точка": desc, "Срок": date_end, "Ожидаемый результат": expected, "Статус": st_label + overdue})
+    st.dataframe(rows, use_container_width=True, hide_index=True, column_config={"Контрольная точка": st.column_config.TextColumn("Контрольная точка", width="medium")})
+    st.caption("Источник: АНО «Гранты Ямала». Редактирование — в личном кабинете информационной системы грантодателя.")
+
+
+def block_kkt() -> None:
+    _block_with_settings("🎯 Ключевые контрольные точки", "kkt", _content_kkt, _settings_kkt)
 
 
 # ---------- Блок 2: Аудит чата ----------
@@ -968,6 +1028,8 @@ def main() -> None:
         block_grant_header()
         st.divider()
         block_stages()
+        st.divider()
+        block_kkt()
         st.divider()
         block_budget()
         st.divider()

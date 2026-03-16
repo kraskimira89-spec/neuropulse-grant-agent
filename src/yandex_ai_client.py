@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -16,9 +17,10 @@ from src.agent_api_client import PROJECT_ROOT, load_config
 
 logger = logging.getLogger(__name__)
 
-# Базовый URL API Yandex AI Studio (OpenAI-совместимый и Conversations)
-# Для Responses API агентов можно использовать https://rest-assistant.api.cloud.yandex.net/v1
+# Базовый URL API Yandex AI Studio
+# Responses API для агентов (Conversations) требует rest-assistant — иначе ответы пустые
 YANDEX_AI_BASE_URL = "https://ai.api.cloud.yandex.net/v1"
+REST_ASSISTANT_BASE_URL = "https://rest-assistant.api.cloud.yandex.net/v1"
 
 # Файл для сохранения ID последней сессии (чтобы продолжить диалог позже)
 SESSION_ID_FILE = PROJECT_ROOT / "data" / ".last_conversation_id"
@@ -48,8 +50,11 @@ def get_yandex_ai_config() -> dict:
     agent_id = (os.getenv("YANDEX_AI_AGENT_ID") or yandex_cfg.get("agent_id") or "").strip()
     model = yandex_cfg.get("model") or "deepseek-v32"
     instructions = yandex_cfg.get("instructions") or ""
-    vector_store_id = os.getenv("YANDEX_VECTOR_STORE_ID") or yandex_cfg.get("vector_store_id") or ""
+    vector_store_id = (os.getenv("YANDEX_VECTOR_STORE_ID") or yandex_cfg.get("vector_store_id") or "").strip()
     base_url = (os.getenv("YANDEX_AI_BASE_URL") or api_cfg.get("base_url") or "").strip() or YANDEX_AI_BASE_URL
+    # Для вызова по agent_id (Conversations API) нужен rest-assistant, иначе API возвращает пустой output_text
+    if agent_id and (not base_url or base_url.rstrip("/") == YANDEX_AI_BASE_URL.rstrip("/")):
+        base_url = REST_ASSISTANT_BASE_URL
 
     return {
         "api_key": api_key,
@@ -60,6 +65,13 @@ def get_yandex_ai_config() -> dict:
         "vector_store_id": vector_store_id,
         "base_url": base_url.rstrip("/"),
     }
+
+
+def _tools_for_vector_store(vector_store_id: str) -> list[dict] | None:
+    """Возвращает tools с file_search для базы знаний, если vector_store_id задан."""
+    if not vector_store_id:
+        return None
+    return [{"type": "file_search", "vector_store_ids": [vector_store_id]}]
 
 
 def ask(question: str, instructions: str | None = None) -> str:
@@ -85,14 +97,18 @@ def ask(question: str, instructions: str | None = None) -> str:
     model_spec = cfg["agent_id"] or cfg["model"]
     model_uri = f"gpt://{cfg['folder_id']}/{model_spec}"
     instr = instructions if instructions is not None else cfg["instructions"]
+    tools = _tools_for_vector_store(cfg.get("vector_store_id") or "")
 
-    logger.info("Запрос к Yandex AI Studio: %s", model_spec)
-    response = client.responses.create(
-        model=model_uri,
-        input=question,
-        instructions=instr or "",
-        max_output_tokens=2000,
-    )
+    logger.info("Запрос к Yandex AI Studio: %s%s", model_spec, " (с базой знаний)" if tools else "")
+    kwargs = {
+        "model": model_uri,
+        "input": question,
+        "instructions": instr or "",
+        "max_output_tokens": 2000,
+    }
+    if tools:
+        kwargs["tools"] = tools
+    response = client.responses.create(**kwargs)
 
     text = getattr(response, "output_text", None)
     if text is None and response.output:
@@ -180,15 +196,19 @@ def ask_in_conversation(
     model_spec = cfg["agent_id"] or cfg["model"]
     model_uri = f"gpt://{cfg['folder_id']}/{model_spec}"
     instr = instructions if instructions is not None else cfg["instructions"]
+    tools = _tools_for_vector_store(cfg.get("vector_store_id") or "")
 
     def _do_request(conv_id: str):
-        return client.responses.create(
-            model=model_uri,
-            conversation=conv_id,
-            input=message,
-            instructions=instr or "",
-            max_output_tokens=2000,
-        )
+        kwargs = {
+            "model": model_uri,
+            "conversation": conv_id,
+            "input": message,
+            "instructions": instr or "",
+            "max_output_tokens": 2000,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        return client.responses.create(**kwargs)
 
     try:
         response = _do_request(conversation_id)
@@ -204,14 +224,32 @@ def ask_in_conversation(
             raise
 
     text = getattr(response, "output_text", None)
-    if text is None and response.output:
-        part = response.output[0]
-        if hasattr(part, "content") and part.content:
-            text = getattr(part.content[0], "text", None) or str(part.content[0])
-        else:
-            text = str(part)
+    if not (text and str(text).strip()):
+        text = None
+    if text is None and getattr(response, "output", None):
+        parts_text = []
+        for part in response.output:
+            if hasattr(part, "content") and part.content:
+                for c in part.content:
+                    t = getattr(c, "text", None)
+                    if t and str(t).strip():
+                        parts_text.append(str(t).strip())
+            else:
+                s = str(part).strip()
+                if s and s != "None":
+                    parts_text.append(s)
+        if parts_text:
+            text = "\n".join(parts_text)
     if text is None:
-        text = str(response)
+        text = str(response).strip() if getattr(response, "__str__", None) else ""
+    if not (text and str(text).strip()):
+        logger.warning("Ответ API пустой. model_spec=%s, output_len=%s", model_spec, len(getattr(response, "output", None) or []))
+        return (
+            "API вернул пустой ответ. Возможные причины: "
+            "неверный **YANDEX_AI_AGENT_ID** или **model** в config (должны соответствовать агенту в AI Studio), "
+            "ограничения модели или таймаут. Проверьте логи дашборда или выполните в терминале: "
+            "`python -m src.yandex_ai_client \"Тест\"` — если там будет ошибка, её текст подскажет причину."
+        )
     return text
 
 
