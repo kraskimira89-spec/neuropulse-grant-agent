@@ -51,5 +51,8 @@ docs/_build/
 # Логи и временные файлы
 logs/
 *.log
+data/.last_conversation_id
+data/chat_audit.jsonl
+data/chat_messages.json
 *.tmp
 .cache/

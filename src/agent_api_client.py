@@ -22,8 +22,15 @@ def load_config() -> dict[str, Any]:
     if not CONFIG_PATH.exists():
         logger.debug("Конфиг не найден: %s", CONFIG_PATH)
         return {}
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        config = json.load(f)
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning("Ошибка в config.json (строка %s): %s", e.lineno, e.msg)
+        raise ValueError(
+            f"Неверный JSON в config/config.json (строка {e.lineno}): {e.msg}. "
+            "Проверьте: все строки в кавычках, после значений запятые, нет переводов строк внутри строк."
+        ) from e
     logger.debug("Конфиг загружен из %s", CONFIG_PATH)
     return config
 

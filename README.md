@@ -65,7 +65,11 @@ if client.is_configured():
 
 ## Документация и обучение
 
-- **Yandex AI Studio** — локальные копии статей по API: контекст диалога, базовый и фоновый запрос, агенты (функции, web search, file search, Code Interpreter). См. [docs/learning/yandex-ai-studio/README.md](docs/learning/yandex-ai-studio/README.md).
+- **Пошаговая настройка агента (без программирования)** — инструкция по созданию агента в веб-интерфейсе Yandex AI Studio для помощи по гранту губернатора и проекту «Нейропульс»: [docs/Инструкция-настройка-агента-грант-Нейропульс.md](docs/Инструкция-настройка-агента-грант-Нейропульс.md).
+- **Подключение по API** — как получить API-ключ и Folder ID, настроить конфиг и отправить запрос к модели из Python: [docs/Подключение-к-API-Yandex-AI-Studio.md](docs/Подключение-к-API-Yandex-AI-Studio.md).
+- **Vector Store API** — список индексов и файлов в индексе агента: [docs/Vector-Store-API.md](docs/Vector-Store-API.md).
+- **План разработки агента по гранту** — веб-чат, быстрые действия, напоминания, аудит: [docs/План-разработки-агента-гранта.md](docs/План-разработки-агента-гранта.md).
+- **Yandex AI Studio** — локальные копии статей по API и полная документация. См. [docs/learning/yandex-ai-studio/README.md](docs/learning/yandex-ai-studio/README.md).
 
 ## Репозиторий
 
