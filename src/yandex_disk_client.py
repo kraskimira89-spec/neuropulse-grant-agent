@@ -32,7 +32,7 @@ def get_disk_config() -> dict:
     config = load_config()
     disk_cfg = config.get("yandex_disk", {}) or {}
     token = (os.getenv("YANDEX_DISK_ACCESS_TOKEN") or disk_cfg.get("access_token") or "").strip()
-    folder = (disk_cfg.get("upload_folder") or os.getenv("YANDEX_DISK_UPLOAD_FOLDER") or "Файлы/ЦИП/ПРОЕКТЫ/2025 Грант Губернатора/Документы контролера").strip()
+    folder = (disk_cfg.get("upload_folder") or os.getenv("YANDEX_DISK_UPLOAD_FOLDER") or "").strip()
     return {"token": token, "upload_folder": folder}
 
 
@@ -53,6 +53,9 @@ def upload_file(local_path: Path, remote_name: str | None = None) -> bool:
     cfg = get_disk_config()
     if not cfg["token"]:
         logger.debug("YANDEX_DISK_ACCESS_TOKEN не задан, загрузка на Диск пропущена.")
+        return False
+    if not cfg["upload_folder"]:
+        logger.debug("YANDEX_DISK_UPLOAD_FOLDER или yandex_disk.upload_folder не заданы, загрузка пропущена.")
         return False
     try:
         import yadisk
