@@ -7,7 +7,10 @@
 ```
 neuropulse-grant-agent/
 ├── src/               # исходный код
-│   └── agent_api_client.py
+│   ├── agent_api_client.py
+│   ├── web_chat.py    # веб-чат с агентом
+│   └── dashboard/     # дашборд проекта
+│       └── app.py
 ├── config/            # конфигурация (API, промпты)
 │   └── config.json
 ├── data/              # примеры данных, шаблоны отчётов
@@ -48,7 +51,14 @@ setup_logging()  # читает config.json
 
 Далее во всех модулях используйте `logging.getLogger(__name__)`; вывод идёт в stderr и при заданном `log_file` — в файл.
 
-## Запуск
+## Запуск веб-интерфейсов
+
+- **Чат с агентом:** `streamlit run src/web_chat.py`
+- **Дашборд проекта:** `streamlit run src/dashboard/app.py` (сроки, аудит чата, статус агента, быстрые действия, Vector Store, ссылки; у каждого блока — настройки по кнопке ⚙️)
+
+Если оба нужны одновременно, задайте порт для второго: `streamlit run src/dashboard/app.py --server.port 8502`
+
+## Запуск кода (API)
 
 После настройки `base_url` и `api_key` в конфиге можно подключать клиент:
 

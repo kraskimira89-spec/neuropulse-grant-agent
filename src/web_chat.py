@@ -34,17 +34,17 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_conversation() -> str:
-    """Возвращает текущий conversation_id из session_state; при необходимости создаёт или загружает."""
-    if "conversation_id" not in st.session_state:
-        conv_id = load_session_id()
-        if conv_id:
-            st.session_state.conversation_id = conv_id
-            st.session_state.continued = True
-        else:
-            st.session_state.conversation_id = create_conversation()
-            save_session_id(st.session_state.conversation_id)
-            st.session_state.continued = False
-    return st.session_state.conversation_id
+    """Возвращает conversation_id: из файла или создаёт новую сессию. После 404 клиент сохраняет новый id в файл — берём его при следующем запросе."""
+    conv_id = load_session_id()
+    if conv_id:
+        st.session_state.conversation_id = conv_id
+        st.session_state.continued = True
+        return conv_id
+    new_id = create_conversation()
+    save_session_id(new_id)
+    st.session_state.conversation_id = new_id
+    st.session_state.continued = False
+    return new_id
 
 
 def _start_new_topic() -> None:
@@ -92,6 +92,58 @@ def _get_grant_tools() -> list[dict]:
     """Читает из config список быстрых действий (grant_tools)."""
     config = load_config()
     return config.get("grant_tools", [])
+
+
+def _load_calendar_events() -> list[dict]:
+    """События из data/grant_calendar.json (или example)."""
+    cal_path = PROJECT_ROOT / "data" / "grant_calendar.json"
+    if not cal_path.exists():
+        cal_path = PROJECT_ROOT / "data" / "grant_calendar.example.json"
+    if not cal_path.exists():
+        return []
+    try:
+        with open(cal_path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _extract_event_title_from_prompt(prompt: str) -> str | None:
+    """Извлекает название события из фразы вида «Создать документы по событию «...»» или «... по событию: ...»."""
+    import re
+    prompt = (prompt or "").strip().lower()
+    if "создать документы по событию" not in prompt and "создать документ по событию" not in prompt:
+        return None
+    m = re.search(r"событию\s*[«\"'](.+?)[»\"']", prompt, re.IGNORECASE | re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"событию\s*:\s*(.+?)(?:\?|\.|$)", prompt, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def _find_event_by_title(events: list[dict], title: str) -> dict | None:
+    """Ищет событие по совпадению названия (без учёта регистра)."""
+    if not title:
+        return None
+    t = title.strip().lower()
+    for ev in events:
+        if (ev.get("title") or "").strip().lower() == t or t in (ev.get("title") or "").lower():
+            return ev
+    return None
+
+
+def _is_affirmative(text: str) -> bool:
+    """Пользователь подтвердил (да, создать и т.п.)."""
+    t = text.strip().lower()
+    return t in ("да", "yes", "создать", "создай", "да, создать", "да создать") or t.startswith("да,") or t.startswith("да ")
+
+
+def _is_negative(text: str) -> bool:
+    """Пользователь отказался."""
+    t = text.strip().lower()
+    return t in ("нет", "no", "не надо", "не нужно", "отмена")
 
 
 def main() -> None:
@@ -153,16 +205,49 @@ def main() -> None:
         with st.chat_message("user"):
             st.markdown(prompt)
         with st.chat_message("assistant"):
-            with st.spinner("Думаю..."):
-                try:
-                    reply = ask_in_conversation(conv_id, prompt)
-                    st.markdown(reply)
-                    st.session_state.messages.append({"role": "assistant", "content": reply})
-                    _log_audit(conv_id, len(prompt), len(reply))
-                except Exception as e:
-                    err = f"Ошибка запроса к агенту: {e}"
-                    st.error(err)
-                    st.session_state.messages.append({"role": "assistant", "content": err})
+            reply = None
+            pending = st.session_state.get("pending_document_event")
+
+            if pending is not None:
+                if _is_affirmative(prompt):
+                    st.session_state.pop("pending_document_event", None)
+                    with st.spinner("Формирую документ и отправляю на почту..."):
+                        try:
+                            from src.grant_documents import create_and_deliver_document
+                            _, reply = create_and_deliver_document(
+                                pending, to_email=None, upload_to_vector_store=True
+                            )
+                        except Exception as e:
+                            logger.exception("Ошибка создания документа: %s", e)
+                            reply = f"Ошибка: {e}"
+                elif _is_negative(prompt):
+                    st.session_state.pop("pending_document_event", None)
+                    reply = "Хорошо, документы не создаём."
+                else:
+                    reply = None
+
+            if reply is None and (pending is None or not _is_affirmative(prompt) and not _is_negative(prompt)):
+                title = _extract_event_title_from_prompt(prompt)
+                if title:
+                    events = _load_calendar_events()
+                    event = _find_event_by_title(events, title)
+                    if event:
+                        st.session_state.pending_document_event = event
+                        reply = (
+                            f"Для события **«{event.get('title', title)}»** могу сформировать:\n"
+                            "— требуемый документ (отчёт);\n— сценарий мероприятия;\n— алгоритм действий.\n\n"
+                            "**Создать документы?** Напишите **Да** или **Нет**. Документ будет в формате Word, отправлен на почту и добавлен в базу знаний агента."
+                        )
+                if reply is None:
+                    try:
+                        reply = ask_in_conversation(conv_id, prompt)
+                        _log_audit(conv_id, len(prompt), len(reply))
+                    except Exception as e:
+                        reply = f"Ошибка запроса к агенту: {e}"
+
+            if reply is not None:
+                st.markdown(reply)
+                st.session_state.messages.append({"role": "assistant", "content": reply})
 
 
 if __name__ == "__main__":

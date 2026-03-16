@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from src.yandex_ai_client import get_client, get_yandex_ai_config
@@ -73,6 +74,35 @@ def get_vector_store(vector_store_id: str) -> Any:
     else:
         raise AttributeError("У клиента нет vector_stores.")
     return vs.retrieve(vector_store_id)
+
+
+def upload_file_to_vector_store(file_path: Path, vector_store_id: str) -> bool:
+    """
+    Загружает файл в поисковый индекс (Vector Store) агента.
+    Сначала загрузка через files.create, затем привязка к индексу.
+    Возвращает True при успехе, False при ошибке (логируется).
+    """
+    if not vector_store_id or not file_path.exists():
+        logger.warning("upload_file_to_vector_store: нет vector_store_id или файл не найден: %s", file_path)
+        return False
+    try:
+        client = _get_vector_store_client()
+        with open(file_path, "rb") as f:
+            file_obj = client.files.create(file=f, purpose="assistants")
+        file_id = getattr(file_obj, "id", None) or str(file_obj)
+        if hasattr(client, "vector_stores"):
+            vs = client.vector_stores
+        elif hasattr(client, "beta") and hasattr(client.beta, "vector_stores"):
+            vs = client.beta.vector_stores
+        else:
+            logger.warning("У клиента нет vector_stores, файл в индекс не добавлен.")
+            return False
+        vs.files.create(vector_store_id=vector_store_id, file_id=file_id)
+        logger.info("Файл загружен в Vector Store: %s -> %s", file_path.name, vector_store_id)
+        return True
+    except Exception as e:
+        logger.exception("Ошибка загрузки файла в Vector Store: %s", e)
+        return False
 
 
 def print_vector_stores(limit: int = 20) -> None:

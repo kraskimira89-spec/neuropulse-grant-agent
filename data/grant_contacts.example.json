@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Иванов И. И.",
+    "role": "Руководитель проекта",
+    "email": "ivanov@example.com"
+  },
+  {
+    "name": "Петрова П. П.",
+    "role": "Ответственный за отчётность",
+    "email": "petrova@example.com"
+  }
+]

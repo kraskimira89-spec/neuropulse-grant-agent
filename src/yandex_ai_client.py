@@ -126,6 +126,15 @@ def create_conversation() -> str:
     return conv.id
 
 
+def _is_conversation_not_found(err: BaseException) -> bool:
+    """Проверяет, что ошибка — «сессия не найдена» (404)."""
+    code = getattr(err, "status_code", None)
+    if code == 404:
+        return True
+    msg = (getattr(err, "message", None) or str(err) or "").lower()
+    return "not found" in msg and "conversation" in msg
+
+
 def ask_in_conversation(
     conversation_id: str,
     message: str,
@@ -134,18 +143,31 @@ def ask_in_conversation(
     """
     Отправляет сообщение в существующую сессию (conversation).
     Модель видит всю историю диалога в этой сессии.
+    При 404 (сессия не найдена) создаёт новую сессию, сохраняет её и повторяет запрос один раз.
     """
     client, cfg = get_client()
     model_uri = f"gpt://{cfg['folder_id']}/{cfg['model']}"
     instr = instructions if instructions is not None else cfg["instructions"]
 
-    response = client.responses.create(
-        model=model_uri,
-        conversation=conversation_id,
-        input=message,
-        instructions=instr or "",
-        max_output_tokens=2000,
-    )
+    def _do_request(conv_id: str):
+        return client.responses.create(
+            model=model_uri,
+            conversation=conv_id,
+            input=message,
+            instructions=instr or "",
+            max_output_tokens=2000,
+        )
+
+    try:
+        response = _do_request(conversation_id)
+    except Exception as e:
+        if _is_conversation_not_found(e):
+            logger.warning("Сессия %s не найдена (404), создаём новую.", conversation_id[:16])
+            new_id = create_conversation()
+            save_session_id(new_id)
+            response = _do_request(new_id)
+        else:
+            raise
 
     text = getattr(response, "output_text", None)
     if text is None and response.output:

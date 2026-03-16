@@ -29,6 +29,7 @@ env/
 # Переменные окружения и секреты
 .env
 .env.local
+config/.env
 *.pem
 
 # IDE / редактор
