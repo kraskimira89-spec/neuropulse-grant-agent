@@ -49,6 +49,7 @@ htmlcov/
 docs/_build/
 
 # Логи и временные файлы
+logs/
 *.log
 *.tmp
 .cache/

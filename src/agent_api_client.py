@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,13 +14,18 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.json"
 
+logger = logging.getLogger(__name__)
+
 
 def load_config() -> dict[str, Any]:
     """Загружает конфигурацию из config/config.json."""
     if not CONFIG_PATH.exists():
+        logger.debug("Конфиг не найден: %s", CONFIG_PATH)
         return {}
     with open(CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+    logger.debug("Конфиг загружен из %s", CONFIG_PATH)
+    return config
 
 
 class AgentAPIClient:
@@ -38,10 +44,18 @@ class AgentAPIClient:
         self.base_url = (base_url or config.get("base_url") or "").rstrip("/")
         self.api_key = api_key or config.get("api_key") or ""
         self.timeout = timeout or config.get("timeout_seconds", 30)
+        logger.info(
+            "Клиент API инициализирован: base_url=%s, timeout=%s, настроен=%s",
+            self.base_url or "(не задан)",
+            self.timeout,
+            bool(self.base_url and self.api_key),
+        )
 
     def is_configured(self) -> bool:
         """Проверяет, заданы ли URL и ключ (для тестов и проверок)."""
-        return bool(self.base_url and self.api_key)
+        ok = bool(self.base_url and self.api_key)
+        logger.debug("is_configured=%s", ok)
+        return ok
 
     # TODO: добавить методы request(), get(), post() после уточнения API
     # def request(self, method: str, path: str, **kwargs) -> Any: ...

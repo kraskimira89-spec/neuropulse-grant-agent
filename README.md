@@ -13,6 +13,7 @@ neuropulse-grant-agent/
 ├── data/              # примеры данных, шаблоны отчётов
 ├── tests/             # тесты
 ├── docs/              # документация
+│   └── learning/      # обучающие материалы (Yandex AI Studio и др.)
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
@@ -30,18 +31,41 @@ neuropulse-grant-agent/
 
 2. Параметры API — в `config/config.json` или в `.env` (см. `.env.example`).
 
+## Логирование
+
+Параметры в `config/config.json` → секция `logging`:
+
+- `level` — уровень (DEBUG, INFO, WARNING, ERROR)
+- `log_file` — путь к файлу логов (например `logs/app.log`), опционально
+- `format` — формат строки лога
+
+Включение при старте приложения:
+
+```python
+from src.logging_config import setup_logging
+setup_logging()  # читает config.json
+```
+
+Далее во всех модулях используйте `logging.getLogger(__name__)`; вывод идёт в stderr и при заданном `log_file` — в файл.
+
 ## Запуск
 
 После настройки `base_url` и `api_key` в конфиге можно подключать клиент:
 
 ```python
+from src.logging_config import setup_logging
 from src.agent_api_client import AgentAPIClient, load_config
 
+setup_logging()
 client = AgentAPIClient()
 if client.is_configured():
     # вызовы API
     pass
 ```
+
+## Документация и обучение
+
+- **Yandex AI Studio** — локальные копии статей по API: контекст диалога, базовый и фоновый запрос, агенты (функции, web search, file search, Code Interpreter). См. [docs/learning/yandex-ai-studio/README.md](docs/learning/yandex-ai-studio/README.md).
 
 ## Репозиторий
 

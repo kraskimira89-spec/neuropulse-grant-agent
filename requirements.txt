@@ -6,3 +6,6 @@ requests>=2.28.0
 
 # Переменные окружения
 python-dotenv>=1.0.0
+
+# OpenAI API
+openai>=2.28.0
