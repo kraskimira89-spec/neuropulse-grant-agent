@@ -16,7 +16,8 @@ from src.agent_api_client import PROJECT_ROOT, load_config
 
 logger = logging.getLogger(__name__)
 
-# Базовый URL API Yandex AI Studio
+# Базовый URL API Yandex AI Studio (OpenAI-совместимый и Conversations)
+# Для Responses API агентов можно использовать https://rest-assistant.api.cloud.yandex.net/v1
 YANDEX_AI_BASE_URL = "https://ai.api.cloud.yandex.net/v1"
 
 # Файл для сохранения ID последней сессии (чтобы продолжить диалог позже)
@@ -44,16 +45,20 @@ def get_yandex_ai_config() -> dict:
 
     api_key = os.getenv("YANDEX_API_KEY") or api_cfg.get("api_key") or ""
     folder_id = os.getenv("YANDEX_FOLDER_ID") or yandex_cfg.get("folder_id") or ""
+    agent_id = (os.getenv("YANDEX_AI_AGENT_ID") or yandex_cfg.get("agent_id") or "").strip()
     model = yandex_cfg.get("model") or "deepseek-v32"
     instructions = yandex_cfg.get("instructions") or ""
     vector_store_id = os.getenv("YANDEX_VECTOR_STORE_ID") or yandex_cfg.get("vector_store_id") or ""
+    base_url = (os.getenv("YANDEX_AI_BASE_URL") or api_cfg.get("base_url") or "").strip() or YANDEX_AI_BASE_URL
 
     return {
         "api_key": api_key,
         "folder_id": folder_id,
+        "agent_id": agent_id,
         "model": model,
         "instructions": instructions,
         "vector_store_id": vector_store_id,
+        "base_url": base_url.rstrip("/"),
     }
 
 
@@ -73,14 +78,15 @@ def ask(question: str, instructions: str | None = None) -> str:
 
     client = openai.OpenAI(
         api_key=cfg["api_key"],
-        base_url=YANDEX_AI_BASE_URL,
+        base_url=cfg["base_url"],
         project=cfg["folder_id"],
     )
 
-    model_uri = f"gpt://{cfg['folder_id']}/{cfg['model']}"
+    model_spec = cfg["agent_id"] or cfg["model"]
+    model_uri = f"gpt://{cfg['folder_id']}/{model_spec}"
     instr = instructions if instructions is not None else cfg["instructions"]
 
-    logger.info("Запрос к Yandex AI Studio: model=%s", cfg["model"])
+    logger.info("Запрос к Yandex AI Studio: %s", model_spec)
     response = client.responses.create(
         model=model_uri,
         input=question,
@@ -110,7 +116,7 @@ def get_client():
         )
     return openai.OpenAI(
         api_key=cfg["api_key"],
-        base_url=YANDEX_AI_BASE_URL,
+        base_url=cfg["base_url"],
         project=cfg["folder_id"],
     ), cfg
 
@@ -121,7 +127,12 @@ def create_conversation() -> str:
     Его можно сохранить и использовать для продолжения разговора позже.
     """
     client, cfg = get_client()
-    conv = client.conversations.create()
+    try:
+        conv = client.conversations.create()
+    except Exception as e:
+        if _is_forbidden_folder(e):
+            _raise_403_folder_hint(e)
+        raise
     logger.info("Создана сессия: %s", conv.id)
     return conv.id
 
@@ -135,6 +146,26 @@ def _is_conversation_not_found(err: BaseException) -> bool:
     return "not found" in msg and "conversation" in msg
 
 
+def _is_forbidden_folder(err: BaseException) -> bool:
+    """Проверяет, что ошибка 403 связана с правами на каталог / неверным folder_id."""
+    code = getattr(err, "status_code", None)
+    if code != 403:
+        return False
+    msg = (getattr(err, "message", None) or str(err) or "").lower()
+    return "permission" in msg and ("folder" in msg or "ai.assistants" in msg)
+
+
+def _raise_403_folder_hint(original: BaseException) -> None:
+    """Выбрасывает понятное исключение с подсказкой про YANDEX_FOLDER_ID и права."""
+    raise ValueError(
+        "Ошибка 403: неверные права или неверный идентификатор каталога. "
+        "YANDEX_FOLDER_ID должен быть идентификатором каталога (в консоли Yandex Cloud он обычно вида b1g...), "
+        "а не идентификатором агента. Узнать folder_id: консоль Yandex Cloud → выберите каталог → Настройки каталога. "
+        "Также нужна роль ai.assistants.editor (или editor/admin) для этого каталога. "
+        "Подробнее: docs/Подключение-к-API-Yandex-AI-Studio.md"
+    ) from original
+
+
 def ask_in_conversation(
     conversation_id: str,
     message: str,
@@ -146,7 +177,8 @@ def ask_in_conversation(
     При 404 (сессия не найдена) создаёт новую сессию, сохраняет её и повторяет запрос один раз.
     """
     client, cfg = get_client()
-    model_uri = f"gpt://{cfg['folder_id']}/{cfg['model']}"
+    model_spec = cfg["agent_id"] or cfg["model"]
+    model_uri = f"gpt://{cfg['folder_id']}/{model_spec}"
     instr = instructions if instructions is not None else cfg["instructions"]
 
     def _do_request(conv_id: str):
@@ -161,6 +193,8 @@ def ask_in_conversation(
     try:
         response = _do_request(conversation_id)
     except Exception as e:
+        if _is_forbidden_folder(e):
+            _raise_403_folder_hint(e)
         if _is_conversation_not_found(e):
             logger.warning("Сессия %s не найдена (404), создаём новую.", conversation_id[:16])
             new_id = create_conversation()

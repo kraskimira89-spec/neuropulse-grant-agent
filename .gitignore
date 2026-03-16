@@ -55,5 +55,9 @@ logs/
 data/.last_conversation_id
 data/chat_audit.jsonl
 data/chat_messages.json
+data/grant_project_dashboard.json
 *.tmp
 .cache/
+
+# Паспорт: служебная метка автосохранения
+Паспорт/.last_passport_save

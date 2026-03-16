@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -17,10 +18,20 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import json
 import logging
+import os
 
 import streamlit as st
 
 from src.agent_api_client import load_config, PROJECT_ROOT
+
+# Чтобы дашборд видел YANDEX_VECTOR_STORE_ID из config/.env
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / "config" / ".env")
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+from src.git_auto_push import git_push_if_changes, _register_atexit
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +40,18 @@ CALENDAR_PATH = PROJECT_ROOT / "data" / "grant_calendar.json"
 CALENDAR_EXAMPLE = PROJECT_ROOT / "data" / "grant_calendar.example.json"
 CONTACTS_PATH = PROJECT_ROOT / "data" / "grant_contacts.json"
 CONTACTS_EXAMPLE = PROJECT_ROOT / "data" / "grant_contacts.example.json"
+GRANT_DASHBOARD_PATH = PROJECT_ROOT / "data" / "grant_project_dashboard.json"
+GRANT_DASHBOARD_EXAMPLE = PROJECT_ROOT / "data" / "grant_project_dashboard.example.json"
+
+# Папка «Паспорт»: паспорт проекта и краткая история диалогов (автосохранение раз в 15 мин)
+PASSPORT_DIR = PROJECT_ROOT / "Паспорт"
+PASSPORT_PROJECT_FILE = PASSPORT_DIR / "паспорт_проекта.md"
+PASSPORT_HISTORY_FILE = PASSPORT_DIR / "история_диалогов.md"
+PASSPORT_LAST_SAVE_FILE = PASSPORT_DIR / ".last_passport_save"
+PASSPORT_INTERVAL_MINUTES = 15
+
+STATUS_LABELS = {"not_started": "⚪ Не начато", "in_progress": "🟡 В работе", "done": "🟢 Выполнено", "overdue": "🔴 Просрочено"}
+STATUS_COLORS = {"not_started": "#888", "in_progress": "#d4a017", "done": "#28a745", "overdue": "#dc3545"}
 
 
 def _block_header(title: str, block_id: str) -> bool:
@@ -66,6 +89,18 @@ def _get(key: str, default):
     return st.session_state[key]
 
 
+def _load_grant_dashboard_data() -> dict:
+    """Загружает данные мониторинга гранта из JSON."""
+    for path in (GRANT_DASHBOARD_PATH, GRANT_DASHBOARD_EXAMPLE):
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning("Ошибка чтения %s: %s", path.name, e)
+    return {}
+
+
 # ---------- Диалог с агентом (сессия и аудит) ----------
 def _ensure_conversation() -> str | None:
     """Возвращает conversation_id для диалога с агентом; при необходимости создаёт или загружает из файла. None если API не настроен."""
@@ -100,10 +135,13 @@ def _log_audit(conversation_id: str, prompt_len: int, reply_len: int) -> None:
 
 
 def _send_to_agent(prompt: str) -> str | None:
-    """Отправляет сообщение агенту, возвращает ответ или None при ошибке."""
+    """Отправляет сообщение агенту, возвращает ответ или строку с описанием ошибки."""
     conv_id = _ensure_conversation()
     if not conv_id:
-        return None
+        return (
+            "Не удалось подключиться к агенту. Проверьте **YANDEX_API_KEY** и **YANDEX_FOLDER_ID** в config/.env. "
+            "YANDEX_FOLDER_ID — это идентификатор **каталога** (обычно начинается с b1g...), а не идентификатор агента."
+        )
     try:
         from src.yandex_ai_client import ask_in_conversation
         reply = ask_in_conversation(conv_id, prompt)
@@ -111,7 +149,7 @@ def _send_to_agent(prompt: str) -> str | None:
         return reply
     except Exception as e:
         logger.exception("Ошибка запроса к агенту: %s", e)
-        return f"Ошибка: {e}"
+        return f"**Ошибка запроса:** {e}"
 
 
 # ---------- Блок 1: Ближайшие сроки по гранту ----------
@@ -284,24 +322,30 @@ def _settings_status(block_id: str) -> None:
 
 def _content_status(block_id: str) -> None:
     config = load_config()
-    api_cfg = config.get("api", {})
-    ya_cfg = config.get("yandex_ai_studio", {})
     project_cfg = config.get("project", {})
-
-    has_key = bool(api_cfg.get("api_key"))
-    folder_id = (ya_cfg.get("folder_id") or "").strip()
+    ya_cfg = config.get("yandex_ai_studio", {})
     agent_name = ya_cfg.get("agent_name") or "—"
-    model = ya_cfg.get("model") or "—"
     version = project_cfg.get("version") or "—"
+
+    try:
+        from src.yandex_ai_client import get_yandex_ai_config
+        ya = get_yandex_ai_config()
+        has_key = bool((ya.get("api_key") or "").strip())
+        folder_id = (ya.get("folder_id") or "").strip()
+        model_spec = ya.get("agent_id") or ya.get("model") or "—"
+    except Exception:
+        has_key = False
+        folder_id = ""
+        model_spec = "—"
 
     st.markdown(f"**Проект:** {project_cfg.get('name', '—')} v{version}")
     st.markdown(f"**Агент:** {agent_name}")
-    st.markdown(f"**Модель:** {model}")
+    st.markdown(f"**Модель/агент в запросах:** {model_spec}")
     st.caption(f"API ключ: {'задан' if has_key else 'не задан'} | Folder ID: {'задан' if folder_id else 'не задан'}")
 
     configured = has_key and folder_id
     if not configured:
-        st.warning("Настройте api_key и folder_id в config или .env для проверки API.")
+        st.warning("Настройте YANDEX_API_KEY и YANDEX_FOLDER_ID в config/.env (или в config.json) для проверки API.")
         return
 
     try:
@@ -319,7 +363,11 @@ def _content_status(block_id: str) -> None:
             items = getattr(r, "data", r) if not isinstance(r, list) else r or []
             st.caption(f"Vector Store: найдено индексов: {len(items)}")
         except Exception as e:
-            st.caption(f"Vector Store: ошибка — {e}")
+            err_str = str(e).lower()
+            if "403" in err_str and ("permission" in err_str or "folder" in err_str):
+                st.caption("Vector Store: 403. Проверьте, что в config/.env указан **YANDEX_FOLDER_ID** — идентификатор **каталога** (обычно b1g...), а не идентификатор агента.")
+            else:
+                st.caption(f"Vector Store: ошибка — {e}")
 
 
 def block_status() -> None:
@@ -368,9 +416,15 @@ def _settings_vs(block_id: str) -> None:
 
 def _content_vs(block_id: str) -> None:
     config = load_config()
-    vs_id = (config.get("yandex_ai_studio", {}) or {}).get("vector_store_id") or ""
+    vs_id = (
+        os.environ.get("YANDEX_VECTOR_STORE_ID", "").strip()
+        or (config.get("yandex_ai_studio", {}) or {}).get("vector_store_id") or ""
+    ).strip()
     if not vs_id:
-        st.info("В конфиге не задан vector_store_id (yandex_ai_studio.vector_store_id).")
+        st.info(
+            "Задайте **vector_store_id**: в `config/config.json` — `yandex_ai_studio.vector_store_id` "
+            "или в `config/.env` — `YANDEX_VECTOR_STORE_ID` (ID поискового индекса в Yandex AI Studio)."
+        )
         return
     only_completed = _get("dashboard_vs_only_completed", True)
     limit = _get("dashboard_vs_files_limit", 20)
@@ -385,16 +439,141 @@ def _content_vs(block_id: str) -> None:
         if not items:
             st.caption("Файлов в индексе нет или ни один не в статусе completed.")
             return
+        def _fmt_size(b: int | None) -> str:
+            if b is None:
+                return "—"
+            if b < 1024:
+                return f"{b} B"
+            if b < 1024 * 1024:
+                return f"{b / 1024:.1f} KB"
+            return f"{b / (1024 * 1024):.1f} MB"
+        def _fmt_date(created_at: Any) -> str:
+            if created_at is None:
+                return "—"
+            try:
+                if isinstance(created_at, (int, float)):
+                    return datetime.utcfromtimestamp(int(created_at)).strftime("%d.%m.%Y %H:%M")
+                s = str(created_at)
+                if "T" in s:
+                    return s.replace("T", " ")[:16]
+                return s[:10] if len(s) >= 10 else s
+            except Exception:
+                return str(created_at)[:16]
+        rows = []
         for f in items:
             fn = getattr(f, "filename", None) or getattr(f, "name", "(без имени)")
             stt = getattr(f, "status", "")
-            st.markdown(f"- {fn} — {stt}")
+            size = getattr(f, "bytes", None)
+            created = getattr(f, "created_at", None)
+            rows.append({"Файл": fn, "Размер": _fmt_size(size), "Создан": _fmt_date(created), "Статус": stt})
+        st.dataframe(rows, use_container_width=True, hide_index=True, column_config={"Файл": st.column_config.TextColumn("Файл", width="medium")})
     except Exception as e:
         st.error(f"Ошибка Vector Store: {e}")
 
 
 def block_vector_store() -> None:
     _block_with_settings("📚 База знаний (Vector Store)", "vector_store", _content_vs, _settings_vs)
+
+
+# ---------- Блок: Календарь Нейропульс (отдельный фрейм) ----------
+def _settings_neuropulse_cal(block_id: str) -> None:
+    days = st.number_input("Период (дней вперёд)", min_value=1, max_value=365, value=_get("dashboard_neuropulse_days", 60), key=f"ni_neuropulse_days_{block_id}")
+    st.session_state["dashboard_neuropulse_days"] = days
+    show_desc = st.checkbox("Показывать описание", value=_get("dashboard_neuropulse_show_desc", True), key=f"cb_neuropulse_desc_{block_id}")
+    st.session_state["dashboard_neuropulse_show_desc"] = show_desc
+    st.caption("Календарь «Нейропульс» создайте в calendar.yandex.ru. URL возьмите из Экспорт календаря и укажите в config/.env: YANDEX_CALENDAR_NEUROPULSE_URL.")
+
+
+def _content_neuropulse_cal(block_id: str) -> None:
+    try:
+        from src.yandex_calendar_client import fetch_neuropulse_events, get_yandex_calendar_config
+    except ImportError:
+        st.info("Модуль Яндекс Календаря недоступен.")
+        return
+    cfg = get_yandex_calendar_config()
+    embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
+    caldav_url = (cfg.get("neuropulse_calendar_url") or "").strip()
+    has_caldav = caldav_url and cfg.get("user") and cfg.get("password")
+
+    # Виджет календаря (iframe по публичной ссылке; используйте только публичный адрес без private_token)
+    if embed_url:
+        safe_url = embed_url.replace('"', "&quot;").replace("<", "").replace(">", "")
+        iframe_html = f'<iframe src="{safe_url}" width="100%" height="450" frameborder="0" style="border: 1px solid #eee; border-radius: 8px;"></iframe>'
+        st.components.v1.html(iframe_html, height=460)
+    if not embed_url and not has_caldav:
+        st.info(
+            "Задайте календарь «Нейропульс»: **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** (публичный адрес из Экспорт в calendar.yandex.ru) "
+            "и/или **YANDEX_CALENDAR_NEUROPULSE_URL** (CalDAV) + учётные данные в config/.env."
+        )
+        return
+    if not has_caldav:
+        st.caption("Список событий ниже загружается по CalDAV — укажите YANDEX_CALENDAR_NEUROPULSE_URL, YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD.")
+        return
+
+    # Список событий по CalDAV
+    if embed_url:
+        st.markdown("**Список событий (CalDAV)**")
+    days = _get("dashboard_neuropulse_days", 60)
+    show_desc = _get("dashboard_neuropulse_show_desc", True)
+    today = datetime.utcnow().date()
+    end = today + timedelta(days=days)
+    events = fetch_neuropulse_events(today, end)
+    if not events:
+        st.caption("В календаре «Нейропульс» за выбранный период событий нет.")
+        return
+    # Экранирование для HTML
+    def esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    lines = []
+    for ev in events:
+        d = ev.get("date", "")
+        title = esc(ev.get("title", "(без названия)"))
+        desc = esc((ev.get("description") or "").strip())
+        addr = esc((ev.get("address") or "").strip())
+        days_left = (datetime.fromisoformat(d.replace("Z", "")).date() - today).days if d else 0
+        lines.append(f'<div class="neuropulse-event"><strong>{d}</strong>')
+        if days_left >= 0:
+            lines.append(f' <span class="neuropulse-days">({days_left} дн.)</span>')
+        lines.append(f' — {title}</div>')
+        if show_desc and desc:
+            lines.append(f'<div class="neuropulse-desc">{desc}</div>')
+        if addr:
+            lines.append(f'<div class="neuropulse-addr">📍 {addr}</div>')
+    inner = "\n".join(lines)
+    html = f"""
+<style>
+  .neuropulse-frame {{
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin: 0.5rem 0;
+    background: linear-gradient(180deg, #fafbfc 0%, #f0f4f8 100%);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }}
+  .neuropulse-frame .neuropulse-title {{
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1a237e;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #3f51b5;
+  }}
+  .neuropulse-event {{ margin: 0.6rem 0; color: #333; }}
+  .neuropulse-days {{ color: #5c6bc0; font-weight: 500; }}
+  .neuropulse-desc {{ font-size: 0.9em; color: #555; margin-left: 0.5rem; margin-bottom: 0.4rem; }}
+  .neuropulse-addr {{ font-size: 0.85em; color: #666; margin-left: 0.5rem; }}
+</style>
+<div class="neuropulse-frame">
+  <div class="neuropulse-title">📅 Календарь Нейропульс</div>
+  {inner}
+</div>
+"""
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def block_neuropulse_calendar() -> None:
+    _block_with_settings("📅 Календарь Нейропульс", "neuropulse_cal", _content_neuropulse_cal, _settings_neuropulse_cal)
 
 
 # ---------- Блок 6: Ссылки и переходы ----------
@@ -468,6 +647,255 @@ def block_contacts() -> None:
     _block_with_settings("👥 Контакты по гранту", "contacts", _content_contacts, _settings_contacts)
 
 
+# ---------- Мониторинг гранта «НейроПульс» (этапы, бюджет, показатели) ----------
+def _settings_grant_header(block_id: str) -> None:
+    st.caption("Данные из data/grant_project_dashboard.json (скопируйте из grant_project_dashboard.example.json).")
+
+
+def _content_grant_header(block_id: str) -> None:
+    data = _load_grant_dashboard_data()
+    h = data.get("header") or {}
+    title = h.get("title") or "НейроПульс"
+    date_start = h.get("date_start") or "—"
+    date_end = h.get("date_end") or "—"
+    stage = h.get("current_stage") or "—"
+    responsible = h.get("responsible") or "—"
+    updated = h.get("updated_at") or "—"
+    st.markdown(f"**{title}**")
+    st.caption(f"Сроки: {date_start} — {date_end}  |  Этап: {stage}  |  Ответственный: {responsible}  |  Обновлено: {updated}")
+
+
+def block_grant_header() -> None:
+    _block_with_settings("📌 Общая информация по гранту", "grant_header", _content_grant_header, _settings_grant_header)
+
+
+def _settings_stages(block_id: str) -> None:
+    st.caption("Таблица этапов в data/grant_project_dashboard.json → stages. Статусы: not_started, in_progress, done, overdue.")
+
+
+def _content_stages(block_id: str) -> None:
+    data = _load_grant_dashboard_data()
+    stages = data.get("stages") or []
+    if not stages:
+        st.info("Добавьте данные в data/grant_project_dashboard.json (секция stages). Пример: data/grant_project_dashboard.example.json")
+        return
+    rows = []
+    for s in stages:
+        status_key = (s.get("status") or "not_started")
+        status_label = STATUS_LABELS.get(status_key, status_key)
+        rows.append({
+            "Этап": s.get("stage", ""),
+            "Мероприятие": s.get("activity", ""),
+            "План: даты": f"{s.get('plan_start') or '—'} — {s.get('plan_end') or '—'}",
+            "Факт: даты": f"{s.get('fact_start') or '—'} — {s.get('fact_end') or '—'}",
+            "Статус": status_label,
+            "%": s.get("percent", 0),
+        })
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def block_stages() -> None:
+    _block_with_settings("📊 Прогресс по этапам", "grant_stages", _content_stages, _settings_stages)
+
+
+def _settings_budget(block_id: str) -> None:
+    st.caption("Бюджет в data/grant_project_dashboard.json → budget. Обновляйте fact в items.")
+
+
+def _content_budget(block_id: str) -> None:
+    data = _load_grant_dashboard_data()
+    budget = data.get("budget") or {}
+    total_plan = budget.get("total_plan", 0)
+    total_fact = budget.get("total_fact", 0)
+    items = budget.get("items") or []
+    if not items and not total_plan:
+        st.info("Добавьте бюджет в data/grant_project_dashboard.json (секция budget).")
+        return
+    st.markdown(f"**Бюджет:** план {total_plan:,.0f} руб.  |  факт {total_fact:,.0f} руб.")
+    pct = (total_fact / total_plan * 100) if total_plan else 0
+    st.progress(min(1.0, total_fact / total_plan) if total_plan else 0)
+    st.caption(f"Освоение: {pct:.1f}%")
+    rows = []
+    for it in items:
+        plan = it.get("plan", 0)
+        fact = it.get("fact", 0)
+        rows.append({"Статья": it.get("name", ""), "План (руб.)": plan, "Факт (руб.)": fact, "% освоения": (fact / plan * 100) if plan else 0})
+        for ch in it.get("children") or []:
+            rows.append({"Статья": "  • " + (ch.get("name") or ""), "План (руб.)": ch.get("plan", 0), "Факт (руб.)": ch.get("fact", 0), "% освоения": (ch.get("fact", 0) / ch.get("plan", 1) * 100) if ch.get("plan") else 0})
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def block_budget() -> None:
+    _block_with_settings("💰 Финансовый мониторинг", "grant_budget", _content_budget, _settings_budget)
+
+
+def _settings_indicators(block_id: str) -> None:
+    st.caption("Показатели в data/grant_project_dashboard.json → indicators.")
+
+
+def _content_indicators(block_id: str) -> None:
+    data = _load_grant_dashboard_data()
+    indicators = data.get("indicators") or []
+    if not indicators:
+        st.info("Добавьте показатели в data/grant_project_dashboard.json → indicators.")
+        return
+    rows = []
+    for ind in indicators:
+        target = ind.get("target", 0)
+        fact = ind.get("fact", 0)
+        suffix = ind.get("suffix", "")
+        pct = (fact / target * 100) if target else 0
+        rows.append({
+            "Показатель": ind.get("name", ""),
+            "Цель": f"{target}{suffix}",
+            "Факт": f"{fact}{suffix}",
+            "% выполнения": round(pct, 1),
+        })
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def block_indicators() -> None:
+    _block_with_settings("👥 Результаты с участниками", "grant_indicators", _content_indicators, _settings_indicators)
+
+
+def _settings_info_activity(block_id: str) -> None:
+    st.caption("Данные в data/grant_project_dashboard.json → info_activity.")
+
+
+def _content_info_activity(block_id: str) -> None:
+    data = _load_grant_dashboard_data()
+    ia = data.get("info_activity") or {}
+    if not ia:
+        st.info("Добавьте секцию info_activity в data/grant_project_dashboard.json.")
+        return
+    reach_t = ia.get("reach_target", 0)
+    reach_f = ia.get("reach_fact", 0)
+    st.metric("Охват кампании (жители ЯНАО)", f"{reach_f:,}".replace(",", " ") if isinstance(reach_f, (int, float)) else reach_f, f"цель {reach_t:,}".replace(",", " ") if reach_t else "")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Публикации в СМИ", ia.get("publications", 0), "")
+    with col2:
+        st.metric("Участники круглого стола", ia.get("round_table_participants", 0), "")
+    with col3:
+        st.metric("НейроФест: участники", ia.get("neurofest_fact", 0), f"план {ia.get('neurofest_target', 100)}")
+
+
+def block_info_activity() -> None:
+    _block_with_settings("📢 Информационная активность", "grant_info_activity", _content_info_activity, _settings_info_activity)
+
+
+# ---------- Паспорт: паспорт проекта и краткая история диалогов (автосохранение каждые 15 мин) ----------
+def _write_passport_project() -> None:
+    """Формирует и записывает паспорт проекта в Паспорт/паспорт_проекта.md."""
+    PASSPORT_DIR.mkdir(parents=True, exist_ok=True)
+    data = _load_grant_dashboard_data()
+    lines = ["# Паспорт проекта\n", f"*Обновлено: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n"]
+    h = (data.get("header") or {})
+    lines.append("## Шапка\n")
+    lines.append(f"- **Название:** {h.get('title', '—')}\n")
+    lines.append(f"- **Период:** {h.get('date_start', '—')} — {h.get('date_end', '—')} ({h.get('months_duration', '—')} мес.)\n")
+    lines.append(f"- **Текущий этап:** {h.get('current_stage', '—')}\n")
+    lines.append(f"- **Ответственный:** {h.get('responsible', '—')}\n")
+    stages = data.get("stages") or []
+    lines.append("\n## Этапы\n")
+    for s in stages:
+        st_label = STATUS_LABELS.get(s.get("status"), s.get("status", ""))
+        lines.append(f"- **{s.get('stage', '')}** — {s.get('activity', '')} | {s.get('plan_start', '')}–{s.get('plan_end', '')} | {st_label}\n")
+    budget = data.get("budget") or {}
+    lines.append("\n## Бюджет\n")
+    lines.append(f"- План всего: {budget.get('total_plan', 0):,}\n")
+    lines.append(f"- Факт: {budget.get('total_fact', 0):,}\n")
+    lines.append(f"- Грант: {budget.get('grant_amount', 0):,} | Собственный вклад: {budget.get('own_contribution', 0):,}\n")
+    ind = data.get("indicators") or []
+    lines.append("\n## Показатели\n")
+    for i in ind:
+        lines.append(f"- {i.get('name', '')}: цель {i.get('target', '—')}{i.get('suffix', '')} | факт {i.get('fact', 0)}\n")
+    info = data.get("info_activity") or {}
+    lines.append("\n## Информационная активность\n")
+    lines.append(f"- Охват: цель {info.get('reach_target', 0)}, факт {info.get('reach_fact', 0)}\n")
+    lines.append(f"- Публикации: {info.get('publications', 0)} | Круглый стол: {info.get('round_table_participants', 0)}\n")
+    lines.append(f"- НейроФест: цель {info.get('neurofest_target', 0)}, факт {info.get('neurofest_fact', 0)}\n")
+    try:
+        PASSPORT_PROJECT_FILE.write_text("".join(lines), encoding="utf-8")
+    except Exception as e:
+        logger.warning("Ошибка записи паспорта проекта: %s", e)
+
+
+def _write_dialogue_history(session_messages: list[dict]) -> None:
+    """Формирует и записывает краткую историю диалогов в Паспорт/история_диалогов.md."""
+    PASSPORT_DIR.mkdir(parents=True, exist_ok=True)
+    lines = ["# Краткая история диалогов\n", f"*Обновлено: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n"]
+    # Сводка по аудит-логу
+    lines.append("## Аудит запросов (data/chat_audit.jsonl)\n")
+    if not AUDIT_LOG.exists():
+        lines.append("Записей пока нет.\n")
+    else:
+        records = []
+        try:
+            with open(AUDIT_LOG, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            lines.append(f"Ошибка чтения: {e}\n")
+        if not records:
+            lines.append("Записей нет.\n")
+        else:
+            by_day = {}
+            for r in records[-500:]:
+                ts = (r.get("ts") or "")[:10]
+                by_day.setdefault(ts, {"count": 0, "prompt_len": 0, "reply_len": 0})
+                by_day[ts]["count"] += 1
+                by_day[ts]["prompt_len"] += r.get("prompt_len", 0)
+                by_day[ts]["reply_len"] += r.get("reply_len", 0)
+            lines.append("| Дата | Запросов | Символов запрос | Символов ответ |\n")
+            lines.append("| --- | --- | --- | --- |\n")
+            for day in sorted(by_day.keys(), reverse=True)[:30]:
+                v = by_day[day]
+                lines.append(f"| {day} | {v['count']} | {v['prompt_len']} | {v['reply_len']} |\n")
+    # Текущая сессия дашборда (кратко)
+    lines.append("\n## Текущая сессия дашборда (снимок)\n")
+    if not session_messages:
+        lines.append("Сообщений в текущей сессии нет.\n")
+    else:
+        for i, msg in enumerate(session_messages[-50:], 1):
+            role = msg.get("role", "")
+            content = (msg.get("content") or "")[:300]
+            if len((msg.get("content") or "")) > 300:
+                content += "..."
+            content = content.replace("\n", " ")
+            lines.append(f"- **{i}. {role}:** {content}\n")
+    try:
+        PASSPORT_HISTORY_FILE.write_text("".join(lines), encoding="utf-8")
+    except Exception as e:
+        logger.warning("Ошибка записи истории диалогов: %s", e)
+
+
+def _passport_save_if_due(session_messages: list) -> None:
+    """Если прошло 15 минут с последнего сохранения — записывает паспорт и историю, обновляет метку времени."""
+    PASSPORT_DIR.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    last_save = None
+    if PASSPORT_LAST_SAVE_FILE.exists():
+        try:
+            last_save = datetime.fromisoformat(PASSPORT_LAST_SAVE_FILE.read_text(encoding="utf-8").strip())
+        except Exception:
+            pass
+    if last_save is None or (now - last_save).total_seconds() >= PASSPORT_INTERVAL_MINUTES * 60:
+        _write_passport_project()
+        _write_dialogue_history(session_messages)
+        try:
+            PASSPORT_LAST_SAVE_FILE.write_text(now.isoformat(), encoding="utf-8")
+        except Exception as e:
+            logger.warning("Ошибка записи метки автосохранения Паспорт: %s", e)
+        git_push_if_changes(commit_message="Автосохранение: паспорт и история диалогов")
+
+
 # ---------- Окно диалога с агентом ----------
 def block_chat() -> None:
     """Окно диалога с агентом. При нажатии на быстрые действия по гранту их формулировки (prompt из config) отправляются агенту и ответ показывается здесь."""
@@ -486,7 +914,7 @@ def block_chat() -> None:
             st.session_state.dashboard_messages.append({"role": "user", "content": prompt})
             with st.spinner("Ответ агента..."):
                 reply = _send_to_agent(prompt)
-                st.session_state.dashboard_messages.append({"role": "assistant", "content": reply or "Ошибка запроса."})
+                st.session_state.dashboard_messages.append({"role": "assistant", "content": reply or "Ошибка запроса. Проверьте настройки API в config/.env."})
         st.rerun()
 
     for msg in st.session_state.dashboard_messages:
@@ -500,7 +928,7 @@ def block_chat() -> None:
         with st.chat_message("assistant"):
             with st.spinner("Думаю..."):
                 reply = _send_to_agent(prompt)
-                text = reply if reply else "Ошибка запроса к агенту."
+                text = reply if reply else "Ошибка запроса к агенту. Проверьте YANDEX_API_KEY и YANDEX_FOLDER_ID в config/.env."
                 st.markdown(text)
                 st.session_state.dashboard_messages.append({"role": "assistant", "content": text})
         st.rerun()
@@ -512,12 +940,24 @@ def main() -> None:
         page_icon="📋",
         layout="wide",
     )
+    # Автосохранение Паспорт каждые 15 минут
+    _passport_save_if_due(st.session_state.get("dashboard_messages", []))
     st.title("📋 Дашборд проекта НейроПульс")
-    st.caption("Обзор сроков, аудит чата, статус агента. Справа — диалог с агентом и быстрые действия (формулировки из кнопок уходят в диалог).")
+    st.caption("Мониторинг гранта (этапы, бюджет, показатели), сроки, аудит чата, статус агента. Справа — диалог с агентом и быстрые действия.")
 
     col1, col2 = st.columns(2)
 
     with col1:
+        block_grant_header()
+        st.divider()
+        block_stages()
+        st.divider()
+        block_budget()
+        st.divider()
+        block_indicators()
+        st.divider()
+        block_info_activity()
+        st.divider()
         block_schedule()
         st.divider()
         block_audit()
@@ -535,8 +975,11 @@ def main() -> None:
         st.divider()
         block_vector_store()
         st.divider()
+        block_neuropulse_calendar()
+        st.divider()
         block_links()
 
 
 if __name__ == "__main__":
+    _register_atexit()
     main()

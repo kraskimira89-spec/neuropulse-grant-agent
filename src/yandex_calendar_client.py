@@ -26,6 +26,12 @@ def get_yandex_calendar_config() -> dict[str, str]:
         "user": os.getenv("YANDEX_CALENDAR_USER") or cal_cfg.get("user") or "",
         "password": os.getenv("YANDEX_CALENDAR_APP_PASSWORD") or cal_cfg.get("app_password") or "",
         "calendar_url": (os.getenv("YANDEX_CALENDAR_URL") or cal_cfg.get("calendar_url") or "").strip(),
+        "neuropulse_calendar_url": (
+            os.getenv("YANDEX_CALENDAR_NEUROPULSE_URL") or cal_cfg.get("neuropulse_calendar_url") or ""
+        ).strip(),
+        "neuropulse_embed_url": (
+            os.getenv("YANDEX_CALENDAR_NEUROPULSE_EMBED_URL") or cal_cfg.get("neuropulse_embed_url") or ""
+        ).strip(),
     }
 
 
@@ -152,4 +158,39 @@ def fetch_events(from_date: date, to_date: date) -> list[dict[str, Any]]:
         return out
     except Exception as e:
         logger.exception("Ошибка CalDAV Яндекс Календарь: %s", e)
+        return []
+
+
+def fetch_neuropulse_events(from_date: date, to_date: date) -> list[dict[str, Any]]:
+    """
+    Загружает события только из календаря «Нейропульс» за указанный период.
+    Требуется neuropulse_calendar_url в конфиге (YANDEX_CALENDAR_NEUROPULSE_URL или yandex_calendar.neuropulse_calendar_url).
+    """
+    cfg = get_yandex_calendar_config()
+    url = cfg.get("neuropulse_calendar_url") or ""
+    if not url or not cfg["user"] or not cfg["password"]:
+        return []
+    try:
+        import caldav
+    except ImportError:
+        return []
+    start_dt = datetime.combine(from_date, datetime.min.time())
+    end_dt = datetime.combine(to_date, datetime.max.time())
+    try:
+        client = caldav.DAVClient(
+            url=YANDEX_CALDAV_URL,
+            username=cfg["user"],
+            password=cfg["password"],
+        )
+        calendar = caldav.Calendar(client=client, url=url)
+        raw_events = calendar.date_search(start=start_dt, end=end_dt)
+        out = []
+        for ev in raw_events:
+            d = _event_to_dict(ev)
+            if d:
+                out.append(d)
+        out.sort(key=lambda x: (x["date"], x["title"]))
+        return out
+    except Exception as e:
+        logger.warning("Ошибка календарь Нейропульс %s: %s", url[:50], e)
         return []

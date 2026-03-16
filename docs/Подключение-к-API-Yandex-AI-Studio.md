@@ -33,6 +33,8 @@
 
 Либо: в консоли в URL после `folderIds=` или в пути часто виден ID каталога. Подробнее: [Как получить ID каталога](https://yandex.cloud/ru/docs/resource-manager/operations/folder/get-id).
 
+**Важно:** для `YANDEX_FOLDER_ID` нужен именно **идентификатор каталога** (обычно начинается с `b1g...`), а не идентификатор агента из AI Studio. Если подставить agent_id вместо folder_id, API вернёт ошибку 403 (Permission denied).
+
 ---
 
 ## 4. Куда подставить API-ключ и Folder ID
@@ -74,7 +76,9 @@ YANDEX_API_KEY=ваш_API_ключ
 YANDEX_FOLDER_ID=ваш_идентификатор_каталога
 ```
 
-Скрипт загружает переменные через `python-dotenv` из `config/.env` и из корневого `.env`.
+Скрипт загружает переменные через `python-dotenv` из `config/.env` и из корневого `.env`. Для вызова агента из Agent Atelier задайте также `YANDEX_AI_AGENT_ID` (или `yandex_ai_studio.agent_id` в config).
+
+Подробнее про способы аутентификации, базовые URL и формат `gpt://folder_id/agent_id`: [Доступ-к-API-Yandex-AI-Studio.md](Доступ-к-API-Yandex-AI-Studio.md).
 
 ---
 
