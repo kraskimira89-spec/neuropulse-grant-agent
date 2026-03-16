@@ -32,7 +32,8 @@ neuropulse-grant-agent/
    pip install -r requirements.txt
    ```
 
-2. Параметры API — в `config/config.json` или в `.env` (см. `.env.example`).
+2. Параметры API — в переменных окружения (рекомендуется) или в `config/config.json`.  
+   **Секреты (API-ключи) храните только в `.env` или `config/.env`** — эти файлы в `.gitignore`. Файл `config/config.json` отслеживается в Git: не указывайте в нём ключи. Если ключ когда-либо попадал в репозиторий, смените его в консоли Yandex Cloud.
 
 ## Логирование
 
