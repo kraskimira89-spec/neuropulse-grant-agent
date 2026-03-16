@@ -105,6 +105,12 @@ def _load_grant_dashboard_data() -> dict:
 def _ensure_conversation() -> str | None:
     """Возвращает conversation_id для диалога с агентом; при необходимости создаёт или загружает из файла. None если API не настроен."""
     try:
+        from dotenv import load_dotenv
+        load_dotenv(PROJECT_ROOT / "config" / ".env")
+        load_dotenv(PROJECT_ROOT / ".env")
+    except ImportError:
+        pass
+    try:
         from src.yandex_ai_client import load_session_id, create_conversation, save_session_id
         conv_id = load_session_id()
         if conv_id:
@@ -134,14 +140,34 @@ def _log_audit(conversation_id: str, prompt_len: int, reply_len: int) -> None:
         logger.warning("Ошибка записи аудит-лога: %s", e)
 
 
+def _agent_config_hint() -> str:
+    """Краткая подсказка, что не задано (без вывода секретов)."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(PROJECT_ROOT / "config" / ".env")
+        load_dotenv(PROJECT_ROOT / ".env")
+    except ImportError:
+        pass
+    env_path = PROJECT_ROOT / "config" / ".env"
+    parts = ["Проверьте **config/.env** (или корневой .env)."]
+    if not env_path.exists():
+        parts.append(f"Файл `config/.env` не найден по пути `{env_path}`.")
+    key_ok = bool(os.environ.get("YANDEX_API_KEY", "").strip())
+    folder_ok = bool(os.environ.get("YANDEX_FOLDER_ID", "").strip())
+    if not key_ok:
+        parts.append("**YANDEX_API_KEY** не задан или пуст.")
+    if not folder_ok:
+        parts.append("**YANDEX_FOLDER_ID** не задан или пуст (нужен идентификатор каталога, обычно b1g...).")
+    if key_ok and folder_ok:
+        parts.append("Ключ и каталог заданы — возможна ошибка сети или прав API (см. логи дашборда).")
+    return " ".join(parts)
+
+
 def _send_to_agent(prompt: str) -> str | None:
     """Отправляет сообщение агенту, возвращает ответ или строку с описанием ошибки."""
     conv_id = _ensure_conversation()
     if not conv_id:
-        return (
-            "Не удалось подключиться к агенту. Проверьте **YANDEX_API_KEY** и **YANDEX_FOLDER_ID** в config/.env. "
-            "YANDEX_FOLDER_ID — это идентификатор **каталога** (обычно начинается с b1g...), а не идентификатор агента."
-        )
+        return "Не удалось подключиться к агенту. " + _agent_config_hint()
     try:
         from src.yandex_ai_client import ask_in_conversation
         reply = ask_in_conversation(conv_id, prompt)
@@ -408,10 +434,9 @@ def block_tools() -> None:
 
 # ---------- Блок 5: База знаний (Vector Store) ----------
 def _settings_vs(block_id: str) -> None:
-    only_completed = st.checkbox("Показывать только файлы со статусом completed", value=_get("dashboard_vs_only_completed", True), key=f"cb_vs_compl_{block_id}")
-    st.session_state["dashboard_vs_only_completed"] = only_completed
-    limit = st.number_input("Макс. файлов в списке", min_value=5, max_value=100, value=_get("dashboard_vs_files_limit", 20), key=f"ni_vs_lim_{block_id}")
+    limit = st.number_input("Макс. файлов для сводки", min_value=5, max_value=200, value=_get("dashboard_vs_files_limit", 50), key=f"ni_vs_lim_{block_id}")
     st.session_state["dashboard_vs_files_limit"] = limit
+    st.caption("Сводка строится по первым N файлам индекса.")
 
 
 def _content_vs(block_id: str) -> None:
@@ -426,47 +451,35 @@ def _content_vs(block_id: str) -> None:
             "или в `config/.env` — `YANDEX_VECTOR_STORE_ID` (ID поискового индекса в Yandex AI Studio)."
         )
         return
-    only_completed = _get("dashboard_vs_only_completed", True)
     limit = _get("dashboard_vs_files_limit", 20)
     try:
         from src.vector_store_client import get_vector_store, list_vector_store_files
         vs = get_vector_store(vs_id)
         name = getattr(vs, "name", None) or vs_id
-        st.caption(f"Индекс: {name}")
-        status_filter = "completed" if only_completed else None
-        r = list_vector_store_files(vs_id, limit=limit, status=status_filter)
+        r = list_vector_store_files(vs_id, limit=limit, status=None)
         items = getattr(r, "data", r) if not isinstance(r, list) else r or []
-        if not items:
-            st.caption("Файлов в индексе нет или ни один не в статусе completed.")
-            return
-        def _fmt_size(b: int | None) -> str:
-            if b is None:
-                return "—"
+        # Сводные данные
+        total_bytes = 0
+        by_status = {}
+        for f in items:
+            size = getattr(f, "bytes", None)
+            if size is not None:
+                total_bytes += int(size)
+            stt = getattr(f, "status", None) or "—"
+            by_status[stt] = by_status.get(stt, 0) + 1
+        def _fmt_size(b: int) -> str:
             if b < 1024:
                 return f"{b} B"
             if b < 1024 * 1024:
                 return f"{b / 1024:.1f} KB"
             return f"{b / (1024 * 1024):.1f} MB"
-        def _fmt_date(created_at: Any) -> str:
-            if created_at is None:
-                return "—"
-            try:
-                if isinstance(created_at, (int, float)):
-                    return datetime.utcfromtimestamp(int(created_at)).strftime("%d.%m.%Y %H:%M")
-                s = str(created_at)
-                if "T" in s:
-                    return s.replace("T", " ")[:16]
-                return s[:10] if len(s) >= 10 else s
-            except Exception:
-                return str(created_at)[:16]
-        rows = []
-        for f in items:
-            fn = getattr(f, "filename", None) or getattr(f, "name", "(без имени)")
-            stt = getattr(f, "status", "")
-            size = getattr(f, "bytes", None)
-            created = getattr(f, "created_at", None)
-            rows.append({"Файл": fn, "Размер": _fmt_size(size), "Создан": _fmt_date(created), "Статус": stt})
-        st.dataframe(rows, use_container_width=True, hide_index=True, column_config={"Файл": st.column_config.TextColumn("Файл", width="medium")})
+        st.caption(f"**Индекс:** {name}")
+        st.metric("Файлов", len(items))
+        st.metric("Общий размер", _fmt_size(total_bytes) if total_bytes else "—")
+        if by_status:
+            st.caption("По статусам: " + ", ".join(f"{s}: {n}" for s, n in sorted(by_status.items())))
+        if not items:
+            st.caption("В индексе пока нет файлов.")
     except Exception as e:
         st.error(f"Ошибка Vector Store: {e}")
 
@@ -495,10 +508,14 @@ def _content_neuropulse_cal(block_id: str) -> None:
     caldav_url = (cfg.get("neuropulse_calendar_url") or "").strip()
     has_caldav = caldav_url and cfg.get("user") and cfg.get("password")
 
-    # Виджет календаря (iframe по публичной ссылке; используйте только публичный адрес без private_token)
+    # Виджет календаря — как в Яндексе: embed/week с layer_ids и tz_id (только публичный адрес, без private_token)
     if embed_url:
         safe_url = embed_url.replace('"', "&quot;").replace("<", "").replace(">", "")
-        iframe_html = f'<iframe src="{safe_url}" width="100%" height="450" frameborder="0" style="border: 1px solid #eee; border-radius: 8px;"></iframe>'
+        # Код как в «Вставка на сайт»: width 800, height 450, frameborder 0, border #eee
+        iframe_html = (
+            f'<iframe src="{safe_url}" width="800" height="450" frameborder="0" '
+            'style="border: 1px solid #eee; max-width: 100%; box-sizing: border-box;"></iframe>'
+        )
         st.components.v1.html(iframe_html, height=460)
     if not embed_url and not has_caldav:
         st.info(
@@ -928,7 +945,7 @@ def block_chat() -> None:
         with st.chat_message("assistant"):
             with st.spinner("Думаю..."):
                 reply = _send_to_agent(prompt)
-                text = reply if reply else "Ошибка запроса к агенту. Проверьте YANDEX_API_KEY и YANDEX_FOLDER_ID в config/.env."
+                text = reply if reply else "Ошибка запроса к агенту (пустой ответ). " + _agent_config_hint()
                 st.markdown(text)
                 st.session_state.dashboard_messages.append({"role": "assistant", "content": text})
         st.rerun()
@@ -973,11 +990,11 @@ def main() -> None:
         st.divider()
         block_contacts()
         st.divider()
-        block_vector_store()
-        st.divider()
         block_neuropulse_calendar()
         st.divider()
         block_links()
+        st.divider()
+        block_vector_store()
 
 
 if __name__ == "__main__":
