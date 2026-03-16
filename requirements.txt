@@ -1,0 +1,8 @@
+# neuropulse-grant-agent — зависимости
+# Установка: pip install -r requirements.txt
+
+# HTTP-клиент (для API при необходимости)
+requests>=2.28.0
+
+# Переменные окружения
+python-dotenv>=1.0.0
