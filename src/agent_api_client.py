@@ -13,25 +13,27 @@ from typing import Any
 # Корень проекта (родитель папки src)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.json"
+CONFIG_EXAMPLE_PATH = PROJECT_ROOT / "config" / "config.example.json"
 
 logger = logging.getLogger(__name__)
 
 
 def load_config() -> dict[str, Any]:
-    """Загружает конфигурацию из config/config.json."""
-    if not CONFIG_PATH.exists():
+    """Загружает конфигурацию из config/config.json или config/config.example.json."""
+    path = CONFIG_PATH if CONFIG_PATH.exists() else CONFIG_EXAMPLE_PATH
+    if not path.exists():
         logger.debug("Конфиг не найден: %s", CONFIG_PATH)
         return {}
     try:
-        with open(CONFIG_PATH, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             config = json.load(f)
     except json.JSONDecodeError as e:
-        logger.warning("Ошибка в config.json (строка %s): %s", e.lineno, e.msg)
+        logger.warning("Ошибка в конфиге (строка %s): %s", e.lineno, e.msg)
         raise ValueError(
-            f"Неверный JSON в config/config.json (строка {e.lineno}): {e.msg}. "
+            f"Неверный JSON в {path.name} (строка {e.lineno}): {e.msg}. "
             "Проверьте: все строки в кавычках, после значений запятые, нет переводов строк внутри строк."
         ) from e
-    logger.debug("Конфиг загружен из %s", CONFIG_PATH)
+    logger.debug("Конфиг загружен из %s", path)
     return config
 
 

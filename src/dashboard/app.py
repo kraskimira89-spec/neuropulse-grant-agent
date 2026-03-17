@@ -52,6 +52,7 @@ DOCUMENTS_ARCHIVE_PATH = PROJECT_ROOT / "data" / "grant_documents_archive.json"
 DOCUMENTS_ARCHIVE_EXAMPLE = PROJECT_ROOT / "data" / "grant_documents_archive.example.json"
 NOTIFICATION_SETTINGS_PATH = PROJECT_ROOT / "data" / "notification_settings.json"
 NOTIFICATION_SETTINGS_EXAMPLE = PROJECT_ROOT / "data" / "notification_settings.example.json"
+DASHBOARD_LAYOUT_PATH = PROJECT_ROOT / "data" / "dashboard_layout.json"
 
 # Папка «Паспорт»: паспорт проекта и краткая история диалогов (автосохранение раз в 15 мин)
 PASSPORT_DIR = PROJECT_ROOT / "Паспорт"
@@ -65,18 +66,24 @@ STATUS_COLORS = {"not_started": "#888", "in_progress": "#d4a017", "done": "#28a7
 
 
 def _block_header(title: str, block_id: str) -> bool:
-    """Заголовок блока с шестерёнкой справа. Возвращает True, если нажали «Настройки»."""
+    """Заголовок блока: название и шестерёнка. Если контекст раскладки задан, показываем только шестерёнку (название и стрелки уже в заголовке блока)."""
     key_open = f"dashboard_settings_{block_id}"
     if key_open not in st.session_state:
         st.session_state[key_open] = False
 
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.subheader(title)
-    with col2:
+    has_layout_context = "dashboard_current_block" in st.session_state
+    if has_layout_context:
         if st.button("⚙️", key=f"gear_{block_id}", help="Настройки блока"):
             st.session_state[key_open] = not st.session_state[key_open]
             st.rerun()
+    else:
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            st.subheader(title)
+        with col2:
+            if st.button("⚙️", key=f"gear_{block_id}", help="Настройки блока"):
+                st.session_state[key_open] = not st.session_state[key_open]
+                st.rerun()
     return st.session_state[key_open]
 
 
@@ -91,6 +98,84 @@ def _block_with_settings(title: str, block_id: str, render_content, render_setti
                     st.session_state[f"dashboard_settings_{block_id}"] = False
                     st.rerun()
         render_content(block_id)
+
+
+def _apply_block_move(
+    action: str, bid: str, side: str, index: int, total: int,
+    left_ids: list[str], right_ids: list[str],
+) -> None:
+    """Перемещает блок: action in ('left','right','up','down')."""
+    if action == "left" and side == "right" and bid in right_ids:
+        right_ids.remove(bid)
+        left_ids.append(bid)
+    elif action == "right" and side == "left" and bid in left_ids:
+        left_ids.remove(bid)
+        right_ids.append(bid)
+    elif action == "up" and index > 0:
+        if side == "left":
+            left_ids[index], left_ids[index - 1] = left_ids[index - 1], left_ids[index]
+        else:
+            right_ids[index], right_ids[index - 1] = right_ids[index - 1], right_ids[index]
+    elif action == "down" and index < total - 1:
+        if side == "left":
+            left_ids[index], left_ids[index + 1] = left_ids[index + 1], left_ids[index]
+        else:
+            right_ids[index], right_ids[index + 1] = right_ids[index + 1], right_ids[index]
+
+
+def _render_move_arrows(bid: str, side: str, index: int, total: int, left_ids: list[str], right_ids: list[str]) -> None:
+    """Рендерит строку с кнопками ← ↑ ↓ → для переноса блока."""
+    c0, c1, c2, c3 = st.columns(4)
+    with c0:
+        if st.button("←", key=f"arr_l_{bid}", help="В левую колонку", disabled=(side != "right")):
+            _apply_block_move("left", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
+    with c1:
+        if st.button("↑", key=f"arr_u_{bid}", help="Выше", disabled=(index <= 0)):
+            _apply_block_move("up", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
+    with c2:
+        if st.button("↓", key=f"arr_d_{bid}", help="Ниже", disabled=(index >= total - 1)):
+            _apply_block_move("down", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
+    with c3:
+        if st.button("→", key=f"arr_r_{bid}", help="В правую колонку", disabled=(side != "left")):
+            _apply_block_move("right", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
+
+
+def _block_header_with_arrows(
+    title: str, bid: str, side: str, index: int, total: int,
+    left_ids: list[str], right_ids: list[str],
+) -> None:
+    """Заголовок блока: название и стрелки ← ↑ ↓ → для переноса."""
+    col_title, c0, c1, c2, c3 = st.columns([3, 1, 1, 1, 1])
+    with col_title:
+        st.subheader(title)
+    with c0:
+        if st.button("←", key=f"arr_l_{bid}", help="В левую колонку", disabled=(side != "right")):
+            _apply_block_move("left", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
+    with c1:
+        if st.button("↑", key=f"arr_u_{bid}", help="Выше", disabled=(index <= 0)):
+            _apply_block_move("up", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
+    with c2:
+        if st.button("↓", key=f"arr_d_{bid}", help="Ниже", disabled=(index >= total - 1)):
+            _apply_block_move("down", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
+    with c3:
+        if st.button("→", key=f"arr_r_{bid}", help="В правую колонку", disabled=(side != "left")):
+            _apply_block_move("right", bid, side, index, total, left_ids, right_ids)
+            _save_dashboard_layout(left_ids, right_ids)
+            st.rerun()
 
 
 def _get(key: str, default):
@@ -401,6 +486,7 @@ def _content_kkt(block_id: str) -> None:
     today = datetime.utcnow().date()
     rows = []
     for i, p in enumerate(filtered, 1):
+        date_end = (p.get("date_end") or "").strip()
         desc = p.get("description", "")
         expected = (p.get("expected_result") or "").strip()
         status = p.get("status", "not_started")
@@ -414,7 +500,7 @@ def _content_kkt(block_id: str) -> None:
             except ValueError:
                 pass
         rows.append({"№": i, "Контрольная точка": desc, "Срок": date_end, "Ожидаемый результат": expected, "Статус": st_label + overdue})
-    st.dataframe(rows, use_container_width=True, hide_index=True, column_config={"Контрольная точка": st.column_config.TextColumn("Контрольная точка", width="medium")})
+    st.dataframe(rows, width="stretch", hide_index=True, column_config={"Контрольная точка": st.column_config.TextColumn("Контрольная точка", width="medium")})
     st.caption("Источник: АНО «Гранты Ямала». Редактирование — в личном кабинете информационной системы грантодателя.")
 
 
@@ -515,7 +601,7 @@ def _content_audit(block_id: str) -> None:
         rows = [{"Дата": k, "Запросов": v["count"], "Символов запрос": v["prompt_len"], "Символов ответ": v["reply_len"]} for k, v in sorted(by_day.items(), reverse=True)]
     else:
         rows = [{"Время": r.get("ts", ""), "Хеш сессии": r.get("conv_id_hash", ""), "Длина запроса": r.get("prompt_len", 0), "Длина ответа": r.get("reply_len", 0)} for r in reversed(records)]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def block_audit() -> None:
@@ -553,7 +639,7 @@ def _content_status(block_id: str) -> None:
 
     configured = has_key and folder_id
     if not configured:
-        st.warning("Настройте YANDEX_API_KEY и YANDEX_FOLDER_ID в config/.env (или в config.json) для проверки API.")
+        st.warning("Настройте YANDEX_API_KEY и YANDEX_FOLDER_ID в .env (см. .env.example) для проверки API.")
         return
 
     try:
@@ -603,7 +689,7 @@ def _content_tools(block_id: str) -> None:
     for t in tools:
         title = t.get("title") or t.get("id") or "—"
         prompt = (t.get("prompt") or "").strip()
-        if st.button(title, key=f"tool_btn_{t.get('id', title)}", use_container_width=True):
+        if st.button(title, key=f"tool_btn_{t.get('id', title)}", width="stretch"):
             if "dashboard_prompt_to_send" not in st.session_state:
                 st.session_state.dashboard_prompt_to_send = []
             st.session_state.dashboard_prompt_to_send.append(prompt)
@@ -701,7 +787,7 @@ def _content_risks(block_id: str) -> None:
             "Митигация": r.get("mitigation", ""),
             "Статус": r.get("status", ""),
         })
-    st.dataframe(rows, use_container_width=True, hide_index=True, column_config={"Описание": st.column_config.TextColumn("Описание", width="medium"), "Митигация": st.column_config.TextColumn("Митигация", width="medium")})
+    st.dataframe(rows, width="stretch", hide_index=True, column_config={"Описание": st.column_config.TextColumn("Описание", width="medium"), "Митигация": st.column_config.TextColumn("Митигация", width="medium")})
 
 
 def block_risks() -> None:
@@ -832,7 +918,7 @@ def _content_communications(block_id: str) -> None:
         st.info("Добавьте данные в data/grant_communications.json.")
         return
     rows = [{"Дата": c.get("date", ""), "Тема": c.get("topic", ""), "Тип": c.get("type", ""), "Статус": c.get("status", "")} for c in items]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def block_communications() -> None:
@@ -862,7 +948,7 @@ def _content_documents_archive(block_id: str) -> None:
         st.info("Добавьте данные в data/grant_documents_archive.json.")
         return
     rows = [{"Название": d.get("name", ""), "Тип": d.get("type", ""), "Статус": d.get("status", ""), "Дата": d.get("date", "")} for d in items]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
     for i, d in enumerate(items):
         link = (d.get("link") or "").strip()
         if link:
@@ -1067,6 +1153,61 @@ def block_links() -> None:
 
 
 # ---------- Блок 7: Контакты по гранту ----------
+def _extract_contacts_from_docx(docx_source: bytes | Path) -> list[dict]:
+    """Извлекает контакты (ФИО, роль, email) из таблиц в .docx заявки на грант (команда/специалисты)."""
+    import io
+    from docx import Document
+
+    if isinstance(docx_source, Path):
+        doc = Document(str(docx_source))
+    else:
+        doc = Document(io.BytesIO(docx_source))
+
+    # Ключевые слова для определения столбцов (нижний регистр)
+    NAME_KEYS = ("фио", "ф.и.о", "имя", "фам")
+    ROLE_KEYS = ("должность", "роль", "позиция", "функция", "обязанност")
+    EMAIL_KEYS = ("email", "e-mail", "почта", "эл. почта", "электронная почта")
+
+    def col_index(row_cells, keys_tuple) -> int | None:
+        for i, cell in enumerate(row_cells):
+            t = (cell.text or "").strip().lower()
+            for k in keys_tuple:
+                if k in t:
+                    return i
+        return None
+
+    for table in doc.tables:
+        if not table.rows:
+            continue
+        header = table.rows[0].cells
+        texts = [(c.text or "").strip().lower() for c in header]
+        i_name = col_index(header, NAME_KEYS)
+        i_role = col_index(header, ROLE_KEYS)
+        i_email = col_index(header, EMAIL_KEYS)
+        if i_name is None and i_role is None:
+            continue
+        if i_name is None:
+            i_name = 0
+        if i_role is None:
+            i_role = i_name + 1 if len(header) > i_name + 1 else i_name
+        if i_email is None:
+            i_email = max(i_name, i_role) + 1 if len(header) > max(i_name, i_role) + 1 else i_role
+
+        out = []
+        for row in table.rows[1:]:
+            cells = row.cells
+            n = len(cells)
+            name = (cells[i_name].text or "").strip() if n > i_name else ""
+            role = (cells[i_role].text or "").strip() if n > i_role else ""
+            email = (cells[i_email].text or "").strip() if n > i_email else ""
+            if name or role or email:
+                out.append({"name": name or "—", "role": role or "—", "email": email or "—"})
+        if out:
+            return out
+
+    return []
+
+
 def _load_grant_contacts() -> list[dict]:
     """Загружает контакты из data/grant_contacts.json или из примера."""
     if CONTACTS_PATH.exists():
@@ -1089,9 +1230,26 @@ def _settings_contacts(block_id: str) -> None:
 
 
 def _content_contacts(block_id: str) -> None:
+    with st.expander("📥 Заполнить из заявки на грант (.docx)", expanded=False):
+        st.caption("Загрузите файл заявки с таблицей команды (столбцы: ФИО/Имя, Должность/Роль, Email). Контакты будут записаны в data/grant_contacts.json.")
+        uploaded = st.file_uploader("Файл заявки .docx", type=["docx"], key="contacts_from_application_upload")
+        if uploaded and st.button("Извлечь специалистов и сохранить", key="btn_fill_contacts_from_app"):
+            contacts = _extract_contacts_from_docx(uploaded.getvalue())
+            if not contacts:
+                st.warning("В документе не найдена таблица с командой (ожидаются столбцы типа ФИО, Должность, Email).")
+            else:
+                try:
+                    CONTACTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    with open(CONTACTS_PATH, "w", encoding="utf-8") as f:
+                        json.dump(contacts, f, ensure_ascii=False, indent=2)
+                    st.success(f"Сохранено контактов: {len(contacts)}. Обновите блок или перезагрузите страницу.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Ошибка записи: {e}")
+
     contacts = _load_grant_contacts()
     if not contacts:
-        st.info("Добавьте data/grant_contacts.json (скопируйте из grant_contacts.example.json) и заполните команду и партнёров по гранту.")
+        st.info("Добавьте data/grant_contacts.json (скопируйте из grant_contacts.example.json) или загрузите заявку выше.")
         return
     rows = []
     for c in contacts:
@@ -1099,7 +1257,7 @@ def _content_contacts(block_id: str) -> None:
         role = c.get("role") or "—"
         email = c.get("email") or "—"
         rows.append({"Имя": name, "Роль": role, "Email": email})
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def block_contacts() -> None:
@@ -1150,7 +1308,7 @@ def _content_stages(block_id: str) -> None:
             "Статус": status_label,
             "%": s.get("percent", 0),
         })
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def block_stages() -> None:
@@ -1181,7 +1339,7 @@ def _content_budget(block_id: str) -> None:
         rows.append({"Статья": it.get("name", ""), "План (руб.)": plan, "Факт (руб.)": fact, "% освоения": (fact / plan * 100) if plan else 0})
         for ch in it.get("children") or []:
             rows.append({"Статья": "  • " + (ch.get("name") or ""), "План (руб.)": ch.get("plan", 0), "Факт (руб.)": ch.get("fact", 0), "% освоения": (ch.get("fact", 0) / ch.get("plan", 1) * 100) if ch.get("plan") else 0})
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def block_budget() -> None:
@@ -1210,7 +1368,7 @@ def _content_indicators(block_id: str) -> None:
             "Факт": f"{fact}{suffix}",
             "% выполнения": round(pct, 1),
         })
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def block_indicators() -> None:
@@ -1436,6 +1594,148 @@ def block_chat() -> None:
         st.rerun()
 
 
+def block_chat_and_tools() -> None:
+    """Диалог с агентом и быстрые действия в одной колонке (2:1)."""
+    chat_col, tools_col = st.columns([2, 1])
+    with chat_col:
+        block_chat()
+    with tools_col:
+        block_tools()
+
+
+# Реестр блоков дашборда для настраиваемого расположения (перенос между колонками и порядок)
+DEFAULT_LAYOUT_LEFT = [
+    "grant_header", "stages", "kkt", "budget", "indicators", "risks", "info_activity",
+    "schedule", "calendar_month", "reminders", "audit", "agent_stats", "status",
+]
+DEFAULT_LAYOUT_RIGHT = [
+    "neuropulse_calendar", "chat_and_tools", "contacts", "notifications",
+    "communications", "documents_archive", "links", "vector_store",
+]
+
+
+def _get_block_registry() -> dict:
+    """Возвращает реестр блоков: id -> (название, функция отрисовки)."""
+    return {
+        "grant_header": ("Шапка гранта", block_grant_header),
+        "stages": ("Этапы", block_stages),
+        "kkt": ("Ключевые контрольные точки", block_kkt),
+        "budget": ("Бюджет", block_budget),
+        "indicators": ("Показатели", block_indicators),
+        "risks": ("Риски", block_risks),
+        "info_activity": ("Информационная активность", block_info_activity),
+        "schedule": ("Ближайшие сроки", block_schedule),
+        "calendar_month": ("Календарь (месяц)", block_calendar_month),
+        "reminders": ("Напоминания", block_reminders),
+        "neuropulse_calendar": ("Календарь Нейропульс", block_neuropulse_calendar),
+        "audit": ("Аудит чата", block_audit),
+        "agent_stats": ("Статус агента", block_agent_stats),
+        "status": ("Настройки", block_status),
+        "chat_and_tools": ("Диалог с агентом и быстрые действия", block_chat_and_tools),
+        "contacts": ("Контакты по гранту", block_contacts),
+        "notifications": ("Настройки уведомлений", block_notifications),
+        "communications": ("Коммуникации с грантодателем", block_communications),
+        "documents_archive": ("Файловый архив", block_documents_archive),
+        "links": ("Ссылки", block_links),
+        "vector_store": ("Vector Store", block_vector_store),
+    }
+
+
+def _load_dashboard_layout() -> tuple[list[str], list[str]]:
+    """Загружает раскладку из data/dashboard_layout.json или возвращает умолчание."""
+    registry = _get_block_registry()
+    valid_ids = set(registry)
+    if DASHBOARD_LAYOUT_PATH.exists():
+        try:
+            with open(DASHBOARD_LAYOUT_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+            left = [x for x in (data.get("left") or []) if x in valid_ids]
+            right = [x for x in (data.get("right") or []) if x in valid_ids]
+            if left or right:
+                # Добавить блоки, которых не было в сохранённой раскладке
+                used = set(left) | set(right)
+                for bid in valid_ids:
+                    if bid not in used:
+                        right.append(bid)
+                return (left, right)
+        except Exception:
+            pass
+    return (list(DEFAULT_LAYOUT_LEFT), list(DEFAULT_LAYOUT_RIGHT))
+
+
+def _save_dashboard_layout(left: list[str], right: list[str]) -> None:
+    """Сохраняет раскладку в data/dashboard_layout.json."""
+    DASHBOARD_LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(DASHBOARD_LAYOUT_PATH, "w", encoding="utf-8") as f:
+        json.dump({"left": left, "right": right}, f, ensure_ascii=False, indent=2)
+
+
+def _render_layout_editor() -> None:
+    """Рендерит экспандер «Расположение блоков»: перенос между колонками и изменение порядка (аналог drag-and-drop)."""
+    registry = _get_block_registry()
+    key_layout = "dashboard_layout_blocks"
+    st.session_state[key_layout] = _load_dashboard_layout()
+    left_ids, right_ids = st.session_state[key_layout]
+
+    with st.expander("📐 Расположение блоков (перенос и порядок)", expanded=False):
+        st.caption("Меняйте порядок блоков и колонку (левая/правая). Изменения сохраняются в data/dashboard_layout.json.")
+        lcol, rcol = st.columns(2)
+        with lcol:
+            st.markdown("**Левая колонка**")
+            for i, bid in enumerate(left_ids):
+                if bid not in registry:
+                    continue
+                title = registry[bid][0]
+                a, b, c, d = st.columns([2, 1, 1, 1])
+                with a:
+                    st.markdown(f"• {title}")
+                with b:
+                    if i > 0 and st.button("↑", key=f"left_up_{bid}", help="Вверх"):
+                        left_ids[i], left_ids[i - 1] = left_ids[i - 1], left_ids[i]
+                        _save_dashboard_layout(left_ids, right_ids)
+                        st.rerun()
+                with c:
+                    if i < len(left_ids) - 1 and st.button("↓", key=f"left_down_{bid}", help="Вниз"):
+                        left_ids[i], left_ids[i + 1] = left_ids[i + 1], left_ids[i]
+                        _save_dashboard_layout(left_ids, right_ids)
+                        st.rerun()
+                with d:
+                    if st.button("→", key=f"left_to_right_{bid}", help="В правую колонку"):
+                        left_ids.remove(bid)
+                        right_ids.append(bid)
+                        _save_dashboard_layout(left_ids, right_ids)
+                        st.rerun()
+        with rcol:
+            st.markdown("**Правая колонка**")
+            for i, bid in enumerate(right_ids):
+                if bid not in registry:
+                    continue
+                title = registry[bid][0]
+                a, b, c, d = st.columns([2, 1, 1, 1])
+                with a:
+                    st.markdown(f"• {title}")
+                with b:
+                    if st.button("←", key=f"right_to_left_{bid}", help="В левую колонку"):
+                        right_ids.remove(bid)
+                        left_ids.append(bid)
+                        _save_dashboard_layout(left_ids, right_ids)
+                        st.rerun()
+                with c:
+                    if i > 0 and st.button("↑", key=f"right_up_{bid}", help="Вверх"):
+                        right_ids[i], right_ids[i - 1] = right_ids[i - 1], right_ids[i]
+                        _save_dashboard_layout(left_ids, right_ids)
+                        st.rerun()
+                with d:
+                    if i < len(right_ids) - 1 and st.button("↓", key=f"right_down_{bid}", help="Вниз"):
+                        right_ids[i], right_ids[i + 1] = right_ids[i + 1], right_ids[i]
+                        _save_dashboard_layout(left_ids, right_ids)
+                        st.rerun()
+        if st.button("Сбросить к умолчанию", key="layout_reset"):
+            st.session_state[key_layout] = (list(DEFAULT_LAYOUT_LEFT), list(DEFAULT_LAYOUT_RIGHT))
+            _save_dashboard_layout(DEFAULT_LAYOUT_LEFT, DEFAULT_LAYOUT_RIGHT)
+            st.rerun()
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Дашборд — Грантовый контролёр НейроПульс",
@@ -1452,65 +1752,39 @@ def main() -> None:
     head_col1, head_col2 = st.columns([4, 1])
     with head_col1:
         st.title("📋 Дашборд проекта НейроПульс")
-        st.caption("Мониторинг гранта (этапы, бюджет, показатели), сроки, аудит чата, статус агента. Справа — диалог с агентом и быстрые действия.")
+        st.caption("Мониторинг гранта, сроки, диалог с агентом. Расположение блоков настраивается в экспандере «Расположение блоков».")
     with head_col2:
         if st.button("🔄 Перезапустите дашборд", type="primary", help="Обновить данные и перезагрузить страницу. Диалог с агентом сохраняется."):
             st.session_state["dashboard_restart_requested"] = True
             st.rerun()
 
+    left_ids, right_ids = _load_dashboard_layout()
+    _render_layout_editor()
+    st.session_state["dashboard_layout_left"] = left_ids
+    st.session_state["dashboard_layout_right"] = right_ids
+
+    registry = _get_block_registry()
     col1, col2 = st.columns(2)
 
     with col1:
-        block_grant_header()
-        st.divider()
-        block_stages()
-        st.divider()
-        block_kkt()
-        st.divider()
-        block_budget()
-        st.divider()
-        block_indicators()
-        st.divider()
-        block_risks()
-        st.divider()
-        block_info_activity()
-        st.divider()
-        # Ближайшие сроки, Календарь (месяц), Предстоящие задачи, Календарь Нейропульс — рядом в 2x2
-        row_cal_1, row_cal_2 = st.columns(2)
-        with row_cal_1:
-            block_schedule()
-        with row_cal_2:
-            block_calendar_month()
-        row_cal_3, row_cal_4 = st.columns(2)
-        with row_cal_3:
-            block_reminders()
-        with row_cal_4:
-            block_neuropulse_calendar()
-        st.divider()
-        block_audit()
-        st.divider()
-        block_agent_stats()
-        st.divider()
-        block_status()
+        for i, bid in enumerate(left_ids):
+            if bid not in registry:
+                continue
+            st.session_state["dashboard_current_block"] = {"bid": bid, "side": "left", "index": i, "total": len(left_ids)}
+            _block_header_with_arrows(registry[bid][0], bid, "left", i, len(left_ids), left_ids, right_ids)
+            registry[bid][1]()
+            if i < len(left_ids) - 1:
+                st.divider()
 
     with col2:
-        chat_col, tools_col = st.columns([2, 1])
-        with chat_col:
-            block_chat()
-        with tools_col:
-            block_tools()
-        st.divider()
-        block_contacts()
-        st.divider()
-        block_notifications()
-        st.divider()
-        block_communications()
-        st.divider()
-        block_documents_archive()
-        st.divider()
-        block_links()
-        st.divider()
-        block_vector_store()
+        for i, bid in enumerate(right_ids):
+            if bid not in registry:
+                continue
+            st.session_state["dashboard_current_block"] = {"bid": bid, "side": "right", "index": i, "total": len(right_ids)}
+            _block_header_with_arrows(registry[bid][0], bid, "right", i, len(right_ids), left_ids, right_ids)
+            registry[bid][1]()
+            if i < len(right_ids) - 1:
+                st.divider()
 
 
 if __name__ == "__main__":

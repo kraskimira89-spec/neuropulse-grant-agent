@@ -30,6 +30,7 @@ env/
 .env
 .env.local
 config/.env
+config/config.json
 *.pem
 
 # IDE / редактор

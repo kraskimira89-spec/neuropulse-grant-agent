@@ -19,7 +19,7 @@ SIGNIFICANT_PREFIXES = (
     "docs/",
     "scripts/",
     "Паспорт/",
-    "config/config.json",
+    "config/config.example.json",
     ".env.example",
     "README.md",
     "pyproject.toml",

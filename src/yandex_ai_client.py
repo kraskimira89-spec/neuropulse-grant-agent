@@ -1,6 +1,6 @@
 """
 Клиент для запросов к Yandex AI Studio (Responses API).
-Читает api_key, folder_id, model из config/config.json или переменных окружения.
+Секреты (api_key, folder_id) — только из переменных окружения (.env). Остальное — config или env.
 Поддерживается .env в config/.env и в корне проекта.
 Диалог с историей: Conversations API (сессии с conversation_id).
 """
@@ -36,14 +36,15 @@ def _load_dotenv() -> None:
 
 
 def get_yandex_ai_config() -> dict:
-    """Читает настройки для Yandex AI Studio из config и env."""
+    """Читает настройки для Yandex AI Studio. api_key и folder_id — только из .env (не из config)."""
     _load_dotenv()
     config = load_config()
     api_cfg = config.get("api", {})
     yandex_cfg = config.get("yandex_ai_studio", {})
 
-    api_key = os.getenv("YANDEX_API_KEY") or api_cfg.get("api_key") or ""
-    folder_id = os.getenv("YANDEX_FOLDER_ID") or yandex_cfg.get("folder_id") or ""
+    # Секреты только из env, чтобы не хранить их в config.json (безопасность, push protection)
+    api_key = (os.getenv("YANDEX_API_KEY") or "").strip()
+    folder_id = (os.getenv("YANDEX_FOLDER_ID") or "").strip()
     agent_id = (os.getenv("YANDEX_AI_AGENT_ID") or yandex_cfg.get("agent_id") or "").strip()
     model = yandex_cfg.get("model") or "deepseek-v32"
     instructions = yandex_cfg.get("instructions") or ""
@@ -72,15 +73,14 @@ def _tools_for_vector_store(vector_store_id: str) -> list[dict] | None:
 def ask(question: str, instructions: str | None = None) -> str:
     """
     Отправляет один запрос к модели Yandex AI Studio и возвращает текст ответа.
-    Перед вызовом задайте api_key и folder_id в config или в переменных YANDEX_API_KEY, YANDEX_FOLDER_ID.
+    Перед вызовом задайте YANDEX_API_KEY и YANDEX_FOLDER_ID в .env (см. .env.example).
     """
     import openai
 
     cfg = get_yandex_ai_config()
     if not cfg["api_key"] or not cfg["folder_id"]:
         raise ValueError(
-            "Задайте api_key и folder_id в config/config.json (api.api_key, yandex_ai_studio.folder_id) "
-            "или в переменных окружения YANDEX_API_KEY и YANDEX_FOLDER_ID"
+            "Задайте YANDEX_API_KEY и YANDEX_FOLDER_ID в .env (см. .env.example)"
         )
 
     client = openai.OpenAI(
@@ -123,7 +123,7 @@ def get_client():
     cfg = get_yandex_ai_config()
     if not cfg["api_key"] or not cfg["folder_id"]:
         raise ValueError(
-            "Задайте api_key и folder_id в config или в переменных YANDEX_API_KEY, YANDEX_FOLDER_ID"
+            "Задайте YANDEX_API_KEY и YANDEX_FOLDER_ID в .env (см. .env.example)"
         )
     return openai.OpenAI(
         api_key=cfg["api_key"],
