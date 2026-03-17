@@ -1019,12 +1019,17 @@ def main() -> None:
     )
     # Автосохранение Паспорт каждые 15 минут
     _passport_save_if_due(st.session_state.get("dashboard_messages", []))
+    # Подтверждение после перезапуска
+    if st.session_state.get("dashboard_restart_requested"):
+        st.success("✅ Дашборд перезапущен. Данные обновлены.")
+        st.session_state["dashboard_restart_requested"] = False
     head_col1, head_col2 = st.columns([4, 1])
     with head_col1:
         st.title("📋 Дашборд проекта НейроПульс")
         st.caption("Мониторинг гранта (этапы, бюджет, показатели), сроки, аудит чата, статус агента. Справа — диалог с агентом и быстрые действия.")
     with head_col2:
         if st.button("🔄 Перезапустите дашборд", type="primary", help="Обновить данные и перезагрузить страницу"):
+            st.session_state["dashboard_restart_requested"] = True
             st.rerun()
 
     col1, col2 = st.columns(2)

@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -17,10 +16,8 @@ from src.agent_api_client import PROJECT_ROOT, load_config
 
 logger = logging.getLogger(__name__)
 
-# Базовый URL API Yandex AI Studio
-# Responses API для агентов (Conversations) требует rest-assistant — иначе ответы пустые
+# Базовый URL API Yandex AI Studio (Conversations и Responses)
 YANDEX_AI_BASE_URL = "https://ai.api.cloud.yandex.net/v1"
-REST_ASSISTANT_BASE_URL = "https://rest-assistant.api.cloud.yandex.net/v1"
 
 # Файл для сохранения ID последней сессии (чтобы продолжить диалог позже)
 SESSION_ID_FILE = PROJECT_ROOT / "data" / ".last_conversation_id"
@@ -191,13 +188,6 @@ def ask_in_conversation(
     При 404 (сессия не найдена) создаёт новую сессию, сохраняет её и повторяет запрос один раз.
     """
     client, cfg = get_client()
-    # #region agent log
-    try:
-        _log_path = PROJECT_ROOT / "debug-b70e7d.log"
-        open(_log_path, "a", encoding="utf-8").write(json.dumps({"sessionId": "b70e7d", "hypothesisId": "H5b", "location": "yandex_ai_client:ask_in_conversation", "message": "client cfg", "data": {"base_url_host": "rest-assistant" if "rest-assistant" in (cfg.get("base_url") or "") else "other", "agent_id_set": bool(cfg.get("agent_id"))}, "timestamp": __import__("time").time() * 1000}) + "\n")
-    except Exception:
-        pass
-    # #endregion
     # В Conversations API с agent_id в URI ai.api возвращал пустой output; rest-assistant даёт 400 Failed to get model. Используем URI модели + instructions + tools на ai.api.
     model_spec = cfg["agent_id"] or cfg["model"]
     if cfg["agent_id"]:
@@ -225,12 +215,6 @@ def ask_in_conversation(
             _raise_403_folder_hint(e)
         if _is_conversation_not_found(e):
             logger.warning("Сессия %s не найдена (404), создаём новую.", conversation_id[:16])
-            # #region agent log
-            try:
-                open(PROJECT_ROOT / "debug-b70e7d.log", "a", encoding="utf-8").write(json.dumps({"sessionId": "b70e7d", "hypothesisId": "H4", "location": "yandex_ai_client:404_retry", "message": "conversation not found, created new", "data": {"used_rest_assistant": "rest-assistant" in (cfg.get("base_url") or "")}, "timestamp": __import__("time").time() * 1000}) + "\n")
-            except Exception:
-                pass
-            # #endregion
             new_id = create_conversation()
             save_session_id(new_id)
             response = _do_request(new_id)
