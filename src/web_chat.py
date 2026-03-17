@@ -159,15 +159,15 @@ def main() -> None:
     # Боковая панель: новая тема / продолжить
     with st.sidebar:
         st.subheader("Сессия")
-        if st.button("🆕 Новая тема", use_container_width=True):
+        if st.button("🆕 Новая тема", width="stretch"):
             _start_new_topic()
-        if st.button("▶️ Продолжить прошлый разговор", use_container_width=True):
+        if st.button("▶️ Продолжить прошлый разговор", width="stretch"):
             _continue_previous()
         st.divider()
         st.subheader("Быстрые действия по гранту")
         grant_tools = _get_grant_tools()
         for tool in grant_tools:
-            if st.button(tool.get("title", tool.get("id", "")), key=tool.get("id", ""), use_container_width=True):
+            if st.button(tool.get("title", tool.get("id", "")), key=tool.get("id", ""), width="stretch"):
                 if "prompt_to_send" not in st.session_state:
                     st.session_state.prompt_to_send = []
                 st.session_state.prompt_to_send.append(tool.get("prompt", ""))

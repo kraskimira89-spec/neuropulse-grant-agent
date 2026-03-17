@@ -1590,7 +1590,7 @@ def _content_contacts(block_id: str) -> None:
         col_config["Телефон"] = st.column_config.TextColumn("Телефон", width="medium")
     edited = st.data_editor(
         rows,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config=col_config,
         key="contacts_data_editor",
