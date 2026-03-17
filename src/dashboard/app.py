@@ -94,6 +94,19 @@ def _block_with_settings(title: str, block_id: str, render_content, render_setti
         if settings_open:
             with st.expander("Настройки блока", expanded=True):
                 render_settings(block_id)
+                st.divider()
+                is_hidden = _is_block_hidden(block_id)
+                hide_label = "👁 Показать блок на дашборде" if is_hidden else "🙈 Скрыть блок с дашборда"
+                if st.button(hide_label, key=f"toggle_hide_{block_id}"):
+                    hidden = _load_hidden_blocks()
+                    if is_hidden:
+                        hidden.discard(block_id)
+                    else:
+                        hidden.add(block_id)
+                    _save_hidden_blocks(hidden)
+                    st.session_state["dashboard_hidden_blocks"] = hidden
+                    st.session_state[f"dashboard_settings_{block_id}"] = False
+                    st.rerun()
                 if st.button("Закрыть настройки", key=f"close_{block_id}"):
                     st.session_state[f"dashboard_settings_{block_id}"] = False
                     st.rerun()
@@ -2190,7 +2203,6 @@ def _load_dashboard_layout() -> tuple[list[str], list[str]]:
             left = [x for x in (data.get("left") or []) if x in valid_ids]
             right = [x for x in (data.get("right") or []) if x in valid_ids]
             if left or right:
-                # Добавить блоки, которых не было в сохранённой раскладке
                 used = set(left) | set(right)
                 for bid in valid_ids:
                     if bid not in used:
@@ -2202,10 +2214,51 @@ def _load_dashboard_layout() -> tuple[list[str], list[str]]:
 
 
 def _save_dashboard_layout(left: list[str], right: list[str]) -> None:
-    """Сохраняет раскладку в data/dashboard_layout.json."""
+    """Сохраняет раскладку в data/dashboard_layout.json (сохраняет поле hidden)."""
     DASHBOARD_LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if DASHBOARD_LAYOUT_PATH.exists():
+        try:
+            with open(DASHBOARD_LAYOUT_PATH, encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    existing["left"] = left
+    existing["right"] = right
     with open(DASHBOARD_LAYOUT_PATH, "w", encoding="utf-8") as f:
-        json.dump({"left": left, "right": right}, f, ensure_ascii=False, indent=2)
+        json.dump(existing, f, ensure_ascii=False, indent=2)
+
+
+def _load_hidden_blocks() -> set[str]:
+    """Загружает множество скрытых блоков из dashboard_layout.json."""
+    if DASHBOARD_LAYOUT_PATH.exists():
+        try:
+            with open(DASHBOARD_LAYOUT_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+            return set(data.get("hidden") or [])
+        except Exception:
+            pass
+    return set()
+
+
+def _save_hidden_blocks(hidden: set[str]) -> None:
+    """Сохраняет список скрытых блоков в dashboard_layout.json."""
+    DASHBOARD_LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if DASHBOARD_LAYOUT_PATH.exists():
+        try:
+            with open(DASHBOARD_LAYOUT_PATH, encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    existing["hidden"] = sorted(hidden)
+    with open(DASHBOARD_LAYOUT_PATH, "w", encoding="utf-8") as f:
+        json.dump(existing, f, ensure_ascii=False, indent=2)
+
+
+def _is_block_hidden(block_id: str) -> bool:
+    """Проверяет, скрыт ли блок (берёт из session_state для скорости)."""
+    return block_id in st.session_state.get("dashboard_hidden_blocks", set())
 
 
 def _render_layout_editor() -> None:
@@ -2215,8 +2268,10 @@ def _render_layout_editor() -> None:
     st.session_state[key_layout] = _load_dashboard_layout()
     left_ids, right_ids = st.session_state[key_layout]
 
-    with st.expander("📐 Расположение блоков (перенос и порядок)", expanded=False):
-        st.caption("Меняйте порядок блоков и колонку (левая/правая). Изменения сохраняются в data/dashboard_layout.json.")
+    hidden_set = st.session_state.get("dashboard_hidden_blocks", _load_hidden_blocks())
+
+    with st.expander("📐 Расположение блоков (перенос, порядок, видимость)", expanded=False):
+        st.caption("Меняйте порядок блоков и колонку (левая/правая). Скрытые блоки помечены 🙈 — нажмите 👁 чтобы вернуть на дашборд.")
         lcol, rcol = st.columns(2)
         with lcol:
             st.markdown("**Левая колонка**")
@@ -2224,9 +2279,11 @@ def _render_layout_editor() -> None:
                 if bid not in registry:
                     continue
                 title = registry[bid][0]
-                a, b, c, d = st.columns([2, 1, 1, 1])
+                is_hid = bid in hidden_set
+                label = f"🙈 ~~{title}~~" if is_hid else f"• {title}"
+                a, b, c, d, e = st.columns([3, 1, 1, 1, 1])
                 with a:
-                    st.markdown(f"• {title}")
+                    st.markdown(label)
                 with b:
                     if i > 0 and st.button("↑", key=f"left_up_{bid}", help="Вверх"):
                         left_ids[i], left_ids[i - 1] = left_ids[i - 1], left_ids[i]
@@ -2243,15 +2300,28 @@ def _render_layout_editor() -> None:
                         right_ids.append(bid)
                         _save_dashboard_layout(left_ids, right_ids)
                         st.rerun()
+                with e:
+                    eye_label = "👁" if is_hid else "🙈"
+                    eye_help = "Показать блок" if is_hid else "Скрыть блок"
+                    if st.button(eye_label, key=f"left_hide_{bid}", help=eye_help):
+                        if is_hid:
+                            hidden_set.discard(bid)
+                        else:
+                            hidden_set.add(bid)
+                        _save_hidden_blocks(hidden_set)
+                        st.session_state["dashboard_hidden_blocks"] = hidden_set
+                        st.rerun()
         with rcol:
             st.markdown("**Правая колонка**")
             for i, bid in enumerate(right_ids):
                 if bid not in registry:
                     continue
                 title = registry[bid][0]
-                a, b, c, d = st.columns([2, 1, 1, 1])
+                is_hid = bid in hidden_set
+                label = f"🙈 ~~{title}~~" if is_hid else f"• {title}"
+                a, b, c, d, e = st.columns([3, 1, 1, 1, 1])
                 with a:
-                    st.markdown(f"• {title}")
+                    st.markdown(label)
                 with b:
                     if st.button("←", key=f"right_to_left_{bid}", help="В левую колонку"):
                         right_ids.remove(bid)
@@ -2267,6 +2337,17 @@ def _render_layout_editor() -> None:
                     if i < len(right_ids) - 1 and st.button("↓", key=f"right_down_{bid}", help="Вниз"):
                         right_ids[i], right_ids[i + 1] = right_ids[i + 1], right_ids[i]
                         _save_dashboard_layout(left_ids, right_ids)
+                        st.rerun()
+                with e:
+                    eye_label = "👁" if is_hid else "🙈"
+                    eye_help = "Показать блок" if is_hid else "Скрыть блок"
+                    if st.button(eye_label, key=f"right_hide_{bid}", help=eye_help):
+                        if is_hid:
+                            hidden_set.discard(bid)
+                        else:
+                            hidden_set.add(bid)
+                        _save_hidden_blocks(hidden_set)
+                        st.session_state["dashboard_hidden_blocks"] = hidden_set
                         st.rerun()
         if st.button("Сбросить к умолчанию", key="layout_reset"):
             st.session_state[key_layout] = (list(DEFAULT_LAYOUT_LEFT), list(DEFAULT_LAYOUT_RIGHT))
@@ -2325,6 +2406,11 @@ def main() -> None:
             st.rerun()
 
     left_ids, right_ids = _load_dashboard_layout()
+    # Загружаем список скрытых блоков в session_state (один раз за rerun)
+    if "dashboard_hidden_blocks" not in st.session_state:
+        st.session_state["dashboard_hidden_blocks"] = _load_hidden_blocks()
+    hidden_blocks = st.session_state["dashboard_hidden_blocks"]
+
     _render_layout_editor()
     st.session_state["dashboard_layout_left"] = left_ids
     st.session_state["dashboard_layout_right"] = right_ids
@@ -2336,6 +2422,8 @@ def main() -> None:
         for i, bid in enumerate(left_ids):
             if bid not in registry:
                 continue
+            if bid in hidden_blocks:
+                continue
             st.session_state["dashboard_current_block"] = {"bid": bid, "side": "left", "index": i, "total": len(left_ids)}
             _block_header_with_arrows(registry[bid][0], bid, "left", i, len(left_ids), left_ids, right_ids)
             registry[bid][1]()
@@ -2345,6 +2433,8 @@ def main() -> None:
     with col2:
         for i, bid in enumerate(right_ids):
             if bid not in registry:
+                continue
+            if bid in hidden_blocks:
                 continue
             st.session_state["dashboard_current_block"] = {"bid": bid, "side": "right", "index": i, "total": len(right_ids)}
             _block_header_with_arrows(registry[bid][0], bid, "right", i, len(right_ids), left_ids, right_ids)
