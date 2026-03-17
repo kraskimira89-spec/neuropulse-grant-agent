@@ -508,12 +508,47 @@ def block_kkt() -> None:
     _block_with_settings("🎯 Ключевые контрольные точки", "kkt", _content_kkt, _settings_kkt)
 
 
+# Цвета фона для событий по этапам (Блок 1/2/3) в календаре
+STAGE_BG_COLORS = {
+    "Блок 1: Подготовительный": "#e3f2fd",
+    "Блок 2: Основной": "#e8f5e9",
+    "Блок 3: Завершающий": "#fff3e0",
+}
+
+
+def _load_stage_ranges() -> list[tuple[str, str, str]]:
+    """Возвращает список (stage_name, plan_start, plan_end) из grant_project_dashboard.json для привязки дат к этапам."""
+    data = _load_grant_dashboard_data()
+    stages = data.get("stages") or []
+    out = []
+    for s in stages:
+        stage_name = (s.get("stage") or "").strip()
+        start_s = (s.get("plan_start") or "").strip()[:10]
+        end_s = (s.get("plan_end") or "").strip()[:10]
+        if stage_name and (start_s or end_s):
+            out.append((stage_name, start_s or end_s, end_s or start_s))
+    return out
+
+
+def _get_stage_for_date(d: datetime.date, stage_ranges: list[tuple[str, str, str]]) -> str:
+    """Определяет этап по дате: дата попадает в plan_start..plan_end. Возвращает название этапа или пустую строку."""
+    d_str = d.isoformat()[:10]
+    for stage_name, start_s, end_s in stage_ranges:
+        if not start_s or not end_s:
+            continue
+        if start_s <= d_str <= end_s:
+            return stage_name
+    return ""
+
+
 def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) -> list[dict]:
-    """Объединяет события из календаря гранта (Яндекс или grant_calendar.json) и ККТ. Фильтр: дата не раньше min_year. Формат: {date, title, description, address}."""
+    """Объединяет события из календаря гранта, ККТ и этапов (grant_project_dashboard). У каждого события поле stage для раскраски по этапу."""
     today = datetime.utcnow().date()
     end = today + timedelta(days=days_ahead)
     cutoff = datetime(min_year, 1, 1).date()
+    stage_ranges = _load_stage_ranges()
     out = []
+
     for ev in _load_schedule_events():
         try:
             d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
@@ -527,6 +562,8 @@ def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) 
                 "title": ev.get("title", "Событие"),
                 "description": ev.get("description", ""),
                 "address": ev.get("address", ""),
+                "source": "grant",
+                "stage": _get_stage_for_date(d, stage_ranges),
             })
     for p in _load_kkt():
         date_end = (p.get("date_end") or "").strip()
@@ -546,6 +583,31 @@ def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) 
                 "title": f"ККТ: {desc}" if desc else "ККТ",
                 "description": f"Ожидаемый результат: {expected}" if expected else "",
                 "address": "",
+                "source": "kkt",
+                "stage": _get_stage_for_date(d, stage_ranges),
+            })
+    # События из этапов (активности с plan_start/plan_end)
+    data = _load_grant_dashboard_data()
+    for s in (data.get("stages") or []):
+        stage_name = (s.get("stage") or "").strip()
+        activity = (s.get("activity") or "").strip()
+        for key in ("plan_end", "plan_start"):
+            date_s = (s.get(key) or "").strip()[:10]
+            if not date_s or not activity:
+                continue
+            try:
+                d = datetime.strptime(date_s, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if d < cutoff or d < today or d > end:
+                continue
+            out.append({
+                "date": d.isoformat(),
+                "title": activity,
+                "description": f"Этап: {stage_name}",
+                "address": "",
+                "source": "stage",
+                "stage": stage_name,
             })
     out.sort(key=lambda x: (x["date"], x["title"]))
     return out
@@ -1019,19 +1081,20 @@ def _settings_neuropulse_cal(block_id: str) -> None:
     st.session_state["dashboard_neuropulse_min_year"] = min_year
     show_desc = st.checkbox("Показывать описание", value=_get("dashboard_neuropulse_show_desc", True), key=f"cb_neuropulse_desc_{block_id}")
     st.session_state["dashboard_neuropulse_show_desc"] = show_desc
-    st.caption("Показываются все события гранта (календарь + ККТ). Виджет — календарь Яндекса (YANDEX_CALENDAR_NEUROPULSE_EMBED_URL).")
+    st.caption("Показываются все события гранта и ККТ с метками [Грант] / [ККТ]. Виджет — календарь Яндекса. После синхронизации события отображаются в Календарь Нейропульс.")
     st.divider()
-    st.caption("**Выгрузка в Яндекс.Календарь:** события из grant_calendar.json и ККТ из grant_kkt.json (с 2026 г.) можно создать в календаре.")
-    if st.button("Выгрузить события гранта и ККТ в Яндекс.Календарь", key=f"btn_push_cal_{block_id}"):
+    st.caption("**Синхронизация с Календарь Нейропульс:** события из grant_calendar.json и ККТ из grant_kkt.json (с 2026 г.) создаются в календаре Нейропульс.")
+    if st.button("Выгрузить события гранта и ККТ в Календарь Нейропульс", key=f"btn_push_cal_{block_id}"):
         try:
             from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, get_yandex_calendar_config
             cfg = get_yandex_calendar_config()
-            url = (cfg.get("calendar_url") or cfg.get("neuropulse_calendar_url") or "").strip()
+            url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
             if not url:
-                st.error("Задайте YANDEX_CALENDAR_URL или YANDEX_CALENDAR_NEUROPULSE_URL в config/.env.")
+                st.error("Задайте YANDEX_CALENDAR_NEUROPULSE_URL или YANDEX_CALENDAR_URL в config/.env.")
             else:
                 created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=url)
-                st.success(f"Создано событий в календаре: {created}. Ошибок: {errors}. Обновите календарь в calendar.yandex.ru.")
+                st.success(f"Создано событий в Календарь Нейропульс: {created}. Ошибок: {errors}. Обновите виджет календаря или calendar.yandex.ru.")
+                st.rerun()
         except Exception as e:
             st.error(f"Ошибка выгрузки: {e}")
 
@@ -1056,8 +1119,24 @@ def _content_neuropulse_cal(block_id: str) -> None:
     else:
         st.caption("Чтобы встроить виджет календаря, укажите **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** в config/.env (Экспорт → вставка на сайт в calendar.yandex.ru).")
 
-    # Список: все события гранта и ККТ
-    st.markdown("**Все события гранта и ККТ** (календарь + ключевые контрольные точки)")
+    # Кнопка синхронизации с Календарь Нейропульс (события и ККТ появятся в виджете календаря выше)
+    st.caption("Чтобы события гранта и ККТ были отмечены в виджете календаря выше, выгрузите их в Яндекс.Календарь «Нейропульс».")
+    try:
+        from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, get_yandex_calendar_config
+        cal_cfg = get_yandex_calendar_config()
+        neuro_url = (cal_cfg.get("neuropulse_calendar_url") or cal_cfg.get("calendar_url") or "").strip()
+        if neuro_url and cal_cfg.get("user") and cal_cfg.get("password"):
+            if st.button("Синхронизировать события гранта и ККТ с Календарь Нейропульс", key="btn_sync_neuropulse_content", type="primary"):
+                created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url)
+                st.success(f"В календарь Нейропульс добавлено событий: {created}. Ошибок: {errors}. Обновите виджет выше или calendar.yandex.ru.")
+                st.rerun()
+        else:
+            st.caption("Задайте YANDEX_CALENDAR_NEUROPULSE_URL (или YANDEX_CALENDAR_URL), YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в .env для синхронизации.")
+    except ImportError:
+        pass
+
+    # Список: все события гранта и ККТ (с метками Грант / ККТ)
+    st.markdown("**Все события гранта и ККТ** (отмечены в календаре после синхронизации)")
     days = _get("dashboard_neuropulse_days", 60)
     min_year = _get("dashboard_neuropulse_min_year", 2026)
     show_desc = _get("dashboard_neuropulse_show_desc", True)
@@ -1073,13 +1152,25 @@ def _content_neuropulse_cal(block_id: str) -> None:
     lines = []
     for ev in events:
         d = ev.get("date", "")
+        source = ev.get("source") or "grant"
+        stage = ev.get("stage") or ""
+        bg_color = STAGE_BG_COLORS.get(stage, "transparent")
+        if source == "kkt":
+            badge = ' <span class="neuropulse-badge neuropulse-badge-kkt">ККТ</span>'
+        elif source == "stage":
+            badge = ' <span class="neuropulse-badge neuropulse-badge-stage">Этап</span>'
+        else:
+            badge = ' <span class="neuropulse-badge neuropulse-badge-grant">Грант</span>'
         title = esc(ev.get("title", "(без названия)"))
         desc = esc((ev.get("description") or "").strip())
         addr = esc((ev.get("address") or "").strip())
         days_left = (datetime.fromisoformat(d.replace("Z", "")).date() - today).days if d else 0
-        lines.append(f'<div class="neuropulse-event"><strong>{d}</strong>')
+        event_style = f"background-color: {bg_color}; padding: 0.4rem 0.6rem; border-radius: 8px; margin: 0.4rem 0; border-left: 4px solid {bg_color if bg_color != 'transparent' else '#ddd'};"
+        lines.append(f'<div class="neuropulse-event" style="{event_style}">{badge}<strong>{d}</strong>')
         if days_left >= 0:
             lines.append(f' <span class="neuropulse-days">({days_left} дн.)</span>')
+        if stage:
+            lines.append(f' <span class="neuropulse-stage">[{esc(stage)}]</span>')
         lines.append(f' — {title}</div>')
         if show_desc and desc:
             lines.append(f'<div class="neuropulse-desc">{desc}</div>')
@@ -1104,13 +1195,19 @@ def _content_neuropulse_cal(block_id: str) -> None:
     padding-bottom: 0.5rem;
     border-bottom: 2px solid #3f51b5;
   }}
-  .neuropulse-event {{ margin: 0.6rem 0; color: #333; }}
+  .neuropulse-event {{ color: #333; }}
   .neuropulse-days {{ color: #5c6bc0; font-weight: 500; }}
+  .neuropulse-stage {{ font-size: 0.85em; color: #555; }}
   .neuropulse-desc {{ font-size: 0.9em; color: #555; margin-left: 0.5rem; margin-bottom: 0.4rem; }}
   .neuropulse-addr {{ font-size: 0.85em; color: #666; margin-left: 0.5rem; }}
+  .neuropulse-badge {{ display: inline-block; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 6px; margin-right: 0.4rem; font-weight: 600; }}
+  .neuropulse-badge-grant {{ background: #e3f2fd; color: #1565c0; }}
+  .neuropulse-badge-kkt {{ background: #e8f5e9; color: #2e7d32; }}
+  .neuropulse-badge-stage {{ background: #fff3e0; color: #e65100; }}
 </style>
 <div class="neuropulse-frame">
   <div class="neuropulse-title">📅 Все события гранта и ККТ</div>
+  <p class="neuropulse-legend" style="font-size:0.85em; color:#666; margin-bottom:0.5rem;">Цвет фона: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый.</p>
   {inner}
 </div>
 """
