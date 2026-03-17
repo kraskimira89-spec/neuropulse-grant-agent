@@ -1861,6 +1861,33 @@ def main() -> None:
         page_icon="📋",
         layout="wide",
     )
+    # Стили: карточки блоков и выделение заголовков
+    st.markdown(
+        """
+        <style>
+        /* Карточки блоков: блоки, в которых есть подзаголовок h2 */
+        div[data-testid="stVerticalBlock"]:has(> div > h2) {
+            border: 1px solid #e0e4e8;
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 0.75rem;
+            background: #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        /* Заголовки блоков (h2) — лёгкий цвет */
+        div[data-testid="stVerticalBlock"] h2 {
+            background: linear-gradient(135deg, #e8eaf6 0%, #f5f5f5 100%);
+            color: #1a237e;
+            border-left: 4px solid #3f51b5;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0 8px 8px 0;
+            margin: -0.25rem 0 0.5rem 0;
+            font-weight: 600;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     # Автосохранение Паспорт каждые 15 минут
     _passport_save_if_due(st.session_state.get("dashboard_messages", []))
     # Подтверждение после перезапуска (диалог с агентом не трогаем — он в session_state и сохраняется при rerun)
