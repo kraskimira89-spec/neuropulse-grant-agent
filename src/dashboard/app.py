@@ -1274,90 +1274,6 @@ def _content_neuropulse_cal(block_id: str) -> None:
         except Exception:
             st.session_state["neuropulse_auto_synced"] = True
 
-    # ---------- Встроенная сетка-месяц (локальные данные, цвет по блоку) ----------
-    import calendar as _cal_mod
-    _today = datetime.utcnow().date()
-    _np_year_key = "dashboard_neuropulse_cal_year"
-    _np_month_key = "dashboard_neuropulse_cal_month"
-    if _np_year_key not in st.session_state:
-        st.session_state[_np_year_key] = _today.year
-    if _np_month_key not in st.session_state:
-        st.session_state[_np_month_key] = _today.month
-    _cy = int(st.session_state[_np_year_key])
-    _cm = int(st.session_state[_np_month_key])
-
-    _nav_col1, _nav_col2, _nav_col3 = st.columns([1, 4, 1])
-    with _nav_col1:
-        if st.button("◀", key="np_cal_prev"):
-            if _cm == 1:
-                st.session_state[_np_year_key] = _cy - 1
-                st.session_state[_np_month_key] = 12
-            else:
-                st.session_state[_np_month_key] = _cm - 1
-            st.rerun()
-    with _nav_col2:
-        _month_names = "Январь Февраль Март Апрель Май Июнь Июль Август Сентябрь Октябрь Ноябрь Декабрь".split()
-        st.markdown(f"<div style='text-align:center;font-weight:600;font-size:1.05rem;padding:0.3rem 0'>{_month_names[_cm-1]} {_cy}</div>", unsafe_allow_html=True)
-    with _nav_col3:
-        if st.button("▶", key="np_cal_next"):
-            if _cm == 12:
-                st.session_state[_np_year_key] = _cy + 1
-                st.session_state[_np_month_key] = 1
-            else:
-                st.session_state[_np_month_key] = _cm + 1
-            st.rerun()
-
-    _min_year_grid = _get("dashboard_neuropulse_min_year", 2026)
-    _first_day = datetime(_cy, _cm, 1).date()
-    _last_day_num = _cal_mod.monthrange(_cy, _cm)[1]
-    _last_day = datetime(_cy, _cm, _last_day_num).date()
-    _grid_events = _load_all_grant_and_kkt_events(min_year=_min_year_grid, start_date=_first_day, end_date=_last_day, force_local=True)
-    _evs_by_day: dict[int, list[dict]] = {}
-    for _ev in _grid_events:
-        try:
-            _d = datetime.fromisoformat(_ev["date"].replace("Z", "")).date()
-        except (KeyError, ValueError):
-            continue
-        if _d.year == _cy and _d.month == _cm:
-            _evs_by_day.setdefault(_d.day, []).append(_ev)
-
-    _cal_obj = _cal_mod.Calendar(firstweekday=0)
-    _weeks = _cal_obj.monthdayscalendar(_cy, _cm)
-    _weekdays = "Пн Вт Ср Чт Пт Сб Вс".split()
-    _cells = []
-    for _week in _weeks:
-        for _day in _week:
-            if _day == 0:
-                _cells.append('<td class="np-cal-empty"></td>')
-            else:
-                _day_evs = _evs_by_day.get(_day, [])
-                _stage = _day_evs[0].get("stage", "") if _day_evs else ""
-                _bg = STAGE_BG_COLORS.get(_stage, "transparent")
-                _is_today = (_d := datetime(_cy, _cm, _day).date()) and _d == _today
-                _style = f"background-color:{_bg};" if _bg != "transparent" else ""
-                if _is_today:
-                    _style += "font-weight:700;outline:2px solid #5c6bc0;outline-offset:-2px;"
-                _mark = "•" if _day_evs else ""
-                _tooltip = " | ".join(e.get("title", "") for e in _day_evs[:3])
-                _title_attr = f' title="{_tooltip}"' if _tooltip else ""
-                _cells.append(f'<td class="np-cal-day" style="{_style}"{_title_attr}>{_day}{_mark}</td>')
-    _rows_html = "".join(
-        "<tr>" + "".join(_cells[i : i + 7]) + "</tr>"
-        for i in range(0, len(_cells), 7)
-    )
-    _thead = "<tr>" + "".join(f"<th>{w}</th>" for w in _weekdays) + "</tr>"
-    _grid_html = f"""<style>
-  .np-cal-table{{border-collapse:collapse;font-size:0.9rem;width:100%;max-width:480px}}
-  .np-cal-table td,.np-cal-table th{{border:1px solid #ddd;padding:0.35rem 0.5rem;text-align:center}}
-  .np-cal-empty{{background:#fafafa}}
-  .np-cal-day{{border-radius:4px;cursor:default}}
-  .np-cal-table th{{background:#f5f5f5;font-weight:600}}
-</style>
-<table class="np-cal-table"><thead>{_thead}</thead><tbody>{_rows_html}</tbody></table>
-<p style="font-size:0.8rem;color:#888;margin:0.3rem 0 0 0">• — день с событием. Цвет: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый. Список — в «Ближайшие сроки» и «Календарь Нейропульс».</p>"""
-    st.markdown(_grid_html, unsafe_allow_html=True)
-    st.divider()
-
     # Виджет календаря Яндекса (если задан embed URL).
     # Если в embed_url нет layer_ids, извлекаем ID из neuropulse_calendar_url и добавляем.
     # Заменяем week-view на month-view чтобы показывались предстоящие события.
@@ -1406,82 +1322,98 @@ def _content_neuropulse_cal(block_id: str) -> None:
 
     # Список: все события гранта и ККТ (с метками Грант / ККТ).
     # force_local=True — всегда из локальных файлов, не зависит от настройки источника «Яндекс Календарь».
-    st.markdown("**Все события гранта и ККТ** (отмечены в календаре после синхронизации)")
+    st.markdown("**📅 Все события гранта и ККТ** (отмечены в календаре после синхронизации)")
+    st.caption("Цвет фона: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый.")
     days = _get("dashboard_neuropulse_days", 60)
     min_year = _get("dashboard_neuropulse_min_year", 2026)
     show_desc = _get("dashboard_neuropulse_show_desc", True)
     today = datetime.utcnow().date()
     events = _load_all_grant_and_kkt_events(days_ahead=days, min_year=min_year, force_local=True)
     if not events:
-        st.caption("За выбранный период событий гранта и ККТ нет. Добавьте данные в grant_calendar.json или grant_kkt.json (и выберите источник «Яндекс Календарь» в блоке «Ближайшие сроки»).")
+        st.caption("За выбранный период событий гранта и ККТ нет. Добавьте данные в grant_calendar.json или grant_kkt.json.")
         return
-    # Экранирование для HTML
-    def esc(s: str) -> str:
-        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
-    lines = []
-    for ev in events:
+    # Проверяем доступность синхронизации для кнопок «+ Календарь»
+    _add_cal_available = False
+    _add_cal_neuro_url = ""
+    try:
+        from src.yandex_calendar_client import add_event_to_neuropulse_calendar as _add_ev, get_yandex_calendar_config as _gcfg
+        _ncfg = _gcfg()
+        _add_cal_neuro_url = (_ncfg.get("neuropulse_calendar_url") or _ncfg.get("calendar_url") or "").strip()
+        _add_cal_available = bool(_add_cal_neuro_url and _ncfg.get("user") and _ncfg.get("password"))
+    except ImportError:
+        pass
+
+    _BADGE_COLORS = {
+        "grant":  ("#e3f2fd", "#1565c0", "Грант"),
+        "kkt":    ("#e8f5e9", "#2e7d32", "ККТ"),
+        "stage":  ("#fff3e0", "#e65100", "Этап"),
+    }
+
+    for idx, ev in enumerate(events):
         d = ev.get("date", "")
         source = ev.get("source") or "grant"
         stage = ev.get("stage") or ""
+        title = ev.get("title", "(без названия)")
+        desc = (ev.get("description") or "").strip()
+        addr = (ev.get("address") or "").strip()
         bg_color = STAGE_BG_COLORS.get(stage, "transparent")
-        if source == "kkt":
-            badge = ' <span class="neuropulse-badge neuropulse-badge-kkt">ККТ</span>'
-        elif source == "stage":
-            badge = ' <span class="neuropulse-badge neuropulse-badge-stage">Этап</span>'
-        else:
-            badge = ' <span class="neuropulse-badge neuropulse-badge-grant">Грант</span>'
-        title = esc(ev.get("title", "(без названия)"))
-        desc = esc((ev.get("description") or "").strip())
-        addr = esc((ev.get("address") or "").strip())
+        badge_bg, badge_fg, badge_text = _BADGE_COLORS.get(source, ("#f5f5f5", "#333", source))
         days_left = (datetime.fromisoformat(d.replace("Z", "")).date() - today).days if d else 0
-        event_style = f"background-color: {bg_color}; padding: 0.4rem 0.6rem; border-radius: 8px; margin: 0.4rem 0; border-left: 4px solid {bg_color if bg_color != 'transparent' else '#ddd'};"
-        lines.append(f'<div class="neuropulse-event" style="{event_style}">{badge}<strong>{d}</strong>')
-        if days_left >= 0:
-            lines.append(f' <span class="neuropulse-days">({days_left} дн.)</span>')
-        if stage:
-            lines.append(f' <span class="neuropulse-stage">[{esc(stage)}]</span>')
-        lines.append(f' — {title}</div>')
-        if show_desc and desc:
-            lines.append(f'<div class="neuropulse-desc">{desc}</div>')
-        if addr:
-            lines.append(f'<div class="neuropulse-addr">📍 {addr}</div>')
-    inner = "\n".join(lines)
-    html = f"""
-<style>
-  .neuropulse-frame {{
-    border: 1px solid #e0e0e0;
-    border-radius: 12px;
-    padding: 1rem 1.25rem;
-    margin: 0.5rem 0;
-    background: linear-gradient(180deg, #fafbfc 0%, #f0f4f8 100%);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  }}
-  .neuropulse-frame .neuropulse-title {{
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #1a237e;
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 2px solid #3f51b5;
-  }}
-  .neuropulse-event {{ color: #333; }}
-  .neuropulse-days {{ color: #5c6bc0; font-weight: 500; }}
-  .neuropulse-stage {{ font-size: 0.85em; color: #555; }}
-  .neuropulse-desc {{ font-size: 0.9em; color: #555; margin-left: 0.5rem; margin-bottom: 0.4rem; }}
-  .neuropulse-addr {{ font-size: 0.85em; color: #666; margin-left: 0.5rem; }}
-  .neuropulse-badge {{ display: inline-block; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 6px; margin-right: 0.4rem; font-weight: 600; }}
-  .neuropulse-badge-grant {{ background: #e3f2fd; color: #1565c0; }}
-  .neuropulse-badge-kkt {{ background: #e8f5e9; color: #2e7d32; }}
-  .neuropulse-badge-stage {{ background: #fff3e0; color: #e65100; }}
-</style>
-<div class="neuropulse-frame">
-  <div class="neuropulse-title">📅 Все события гранта и ККТ</div>
-  <p class="neuropulse-legend" style="font-size:0.85em; color:#666; margin-bottom:0.5rem;">Цвет фона: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый.</p>
-  {inner}
-</div>
-"""
-    st.markdown(html, unsafe_allow_html=True)
+
+        border_color = bg_color if bg_color != "transparent" else "#ddd"
+        row_style = (
+            f"background-color:{bg_color}; padding:0.4rem 0.7rem; border-radius:8px; "
+            f"margin:0.25rem 0; border-left:4px solid {border_color};"
+        )
+        badge_html = (
+            f'<span style="display:inline-block;font-size:0.72rem;padding:0.12rem 0.4rem;'
+            f'border-radius:5px;margin-right:0.4rem;font-weight:700;'
+            f'background:{badge_bg};color:{badge_fg}">{badge_text}</span>'
+        )
+        days_html = (
+            f'<span style="color:#5c6bc0;font-weight:500"> ({days_left} дн.)</span>'
+            if days_left >= 0 else ""
+        )
+        stage_html = (
+            f'<span style="font-size:0.82em;color:#666"> [{stage}]</span>' if stage else ""
+        )
+        header_html = (
+            f'{badge_html}<strong>{d}</strong>{days_html}{stage_html}'
+            f' — {title}'
+        )
+
+        ev_col, btn_col = st.columns([9, 1])
+        with ev_col:
+            lines_html = f'<div style="{row_style}">{header_html}</div>'
+            if show_desc and desc:
+                lines_html += f'<div style="font-size:0.88em;color:#555;margin-left:0.6rem;margin-bottom:0.2rem">{desc}</div>'
+            if addr:
+                lines_html += f'<div style="font-size:0.82em;color:#666;margin-left:0.6rem">📍 {addr}</div>'
+            st.markdown(lines_html, unsafe_allow_html=True)
+        with btn_col:
+            btn_key = f"np_add_cal_{idx}_{d}"
+            ok_key = f"np_add_cal_ok_{idx}_{d}"
+            if st.session_state.get(ok_key):
+                st.markdown("✅", unsafe_allow_html=True)
+            elif _add_cal_available:
+                if st.button("＋", key=btn_key, help=f"Добавить «{title}» в Календарь Нейропульс"):
+                    try:
+                        _start = datetime.fromisoformat(d.replace("Z", "")).date()
+                        _ok, _msg = _add_ev(
+                            title=title,
+                            start_date=_start,
+                            description=desc,
+                            address=addr,
+                            save_to_json=False,
+                        )
+                        if _ok:
+                            st.session_state[ok_key] = True
+                            st.rerun()
+                        else:
+                            st.error(_msg)
+                    except Exception as _e:
+                        st.error(str(_e))
 
 
 def block_neuropulse_calendar() -> None:
@@ -2211,7 +2143,7 @@ def block_chat_and_tools() -> None:
 # Реестр блоков дашборда для настраиваемого расположения (перенос между колонками и порядок)
 DEFAULT_LAYOUT_LEFT = [
     "grant_header", "stages", "kkt", "budget", "indicators", "risks", "info_activity",
-    "schedule", "calendar_month", "reminders", "audit", "agent_stats", "status",
+    "schedule", "reminders", "audit", "agent_stats", "status",
 ]
 DEFAULT_LAYOUT_RIGHT = [
     "neuropulse_calendar", "chat_and_tools", "contacts", "notifications",
