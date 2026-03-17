@@ -64,6 +64,47 @@ PASSPORT_INTERVAL_MINUTES = 15
 STATUS_LABELS = {"not_started": "⚪ Не начато", "in_progress": "🟡 В работе", "done": "🟢 Выполнено", "overdue": "🔴 Просрочено"}
 STATUS_COLORS = {"not_started": "#888", "in_progress": "#d4a017", "done": "#28a745", "overdue": "#dc3545"}
 
+# Постельные оттенки карточек: (фон карточки, фон заголовка — чуть ярче)
+BLOCK_PALETTE: dict[str, tuple[str, str]] = {
+    "grant_header":        ("#f0eeff", "#e2d9ff"),  # лаванда
+    "stages":              ("#e8f6ef", "#ceead9"),  # мята
+    "kkt":                 ("#fff2e8", "#ffe0c6"),  # персик
+    "budget":              ("#fefae6", "#fdf3c8"),  # масло
+    "indicators":          ("#e6f3ff", "#cce5ff"),  # небесно-голубой
+    "risks":               ("#fceaea", "#f9d2d2"),  # пудровый розовый
+    "info_activity":       ("#e6faf6", "#cbf0e8"),  # тиффани
+    "schedule":            ("#f0e8ff", "#e0d0ff"),  # сиреневый
+    "calendar_month":      ("#e8f7ff", "#c9e9ff"),  # голубой
+    "reminders":           ("#fff5e6", "#ffe9c8"),  # янтарный
+    "neuropulse_calendar": ("#e6f9ff", "#c8efff"),  # циан
+    "audit":               ("#eef5e8", "#daecd0"),  # шалфей
+    "agent_stats":         ("#fce8f5", "#f8d0ec"),  # орхидея
+    "status":              ("#eaf1f8", "#d2e4f2"),  # стальной
+    "chat_and_tools":      ("#fef6e8", "#faead0"),  # кремовый
+    "contacts":            ("#ede8fa", "#ddd0f6"),  # пыльно-сиреневый
+    "notifications":       ("#fff8e6", "#ffedc8"),  # медовый
+    "communications":      ("#e8f8f0", "#c8f0da"),  # морской
+    "documents_archive":   ("#e8f2fa", "#cce0f4"),  # васильковый
+    "links":               ("#fce8ed", "#f8d0da"),  # коралловый
+    "vector_store":        ("#e8faf6", "#c8f2e8"),  # аквамарин
+    "parser":              ("#ece8fa", "#dcd0f4"),  # индиго
+}
+
+
+def _inject_block_palette_css() -> None:
+    """Генерирует и инжектирует CSS-правила постельных оттенков для каждого блока."""
+    rules: list[str] = []
+    for bid, (card_bg, hdr_bg) in BLOCK_PALETTE.items():
+        sel = f'[data-testid="stVerticalBlockBorderWrapper"]:has(.np-bm-{bid})'
+        rules.append(
+            f'{sel} {{'
+            f' background: linear-gradient(to bottom, {hdr_bg} 0px, {hdr_bg} 62px, {card_bg} 62px, {card_bg} 100%) !important;'
+            f' border-color: {hdr_bg} !important;'
+            f'}}'
+        )
+    css = "\n".join(rules)
+    st.markdown(f'<style id="np-block-palette">\n{css}\n</style>', unsafe_allow_html=True)
+
 
 def _block_header(title: str, block_id: str) -> bool:
     """Заголовок блока: название и шестерёнка. Если контекст раскладки задан, показываем только шестерёнку (название и стрелки уже в заголовке блока)."""
@@ -90,6 +131,8 @@ def _block_header(title: str, block_id: str) -> bool:
 def _block_with_settings(title: str, block_id: str, render_content, render_settings):
     """Рендер блока: заголовок + шестерёнка, при открытых настройках — экспандер, затем контент."""
     with st.container(border=True):
+        # Невидимый маркер для CSS :has() — позволяет красить карточку по block_id
+        st.markdown(f'<div class="np-bm-{block_id}" style="display:none;height:0;overflow:hidden"></div>', unsafe_allow_html=True)
         settings_open = _block_header(title, block_id)
         if settings_open:
             with st.expander("Настройки блока", expanded=True):
@@ -882,17 +925,78 @@ def _save_parser_last_run(result: dict) -> None:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
 
+def _save_parser_sources(channels: list[str], disk_links: list[str]) -> tuple[bool, str]:
+    """Сохраняет каналы и ссылки в config/config.json → parser."""
+    try:
+        from src.agent_api_client import CONFIG_PATH, load_config
+        config = {}
+        cfg_path = CONFIG_PATH
+        if cfg_path.exists():
+            with open(cfg_path, encoding="utf-8") as f:
+                config = json.load(f)
+        else:
+            # Копируем из example если нет config.json
+            from src.agent_api_client import CONFIG_EXAMPLE_PATH
+            if CONFIG_EXAMPLE_PATH.exists():
+                with open(CONFIG_EXAMPLE_PATH, encoding="utf-8") as f:
+                    config = json.load(f)
+        if "parser" not in config:
+            config["parser"] = {}
+        config["parser"]["telegram_channels"] = channels
+        config["parser"]["disk_public_links"] = disk_links
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True, f"Сохранено: {len(channels)} канал(ов) Telegram, {len(disk_links)} ссылок Диска."
+    except Exception as e:
+        return False, str(e)
+
+
 def _settings_parser(block_id: str) -> None:
-    st.markdown("**Как настроить (по шагам)**")
-    st.markdown(
-        "1. **Конфиг** — откройте `config/config.json`, найдите секцию `parser`.\n"
-        "2. **Telegram** — в `telegram_channels` укажите каналы в кавычках через запятую, например: "
-        "`[\"@channel\", \"https://t.me/other\"]`. Если не нужен — оставьте `[]`.\n"
-        "3. **Яндекс.Диск** — в `disk_public_links` укажите ссылки на публичные папки, например: "
-        "`[\"https://disk.yandex.ru/d/xxxxx\"]`. Если не нужен — оставьте `[]`.\n"
-        "4. **Секреты Telegram** — в `config/.env` или `.env` в корне задайте TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE (только если парсите Telegram). Получить: https://my.telegram.org/apps\n"
-        "5. **Vector Store** — в `parser.vector_store_id` укажите ID индекса или оставьте пустым — тогда используется общий из yandex_ai_studio / YANDEX_VECTOR_STORE_ID."
+    try:
+        from src.parser import get_parser_config
+        cfg = get_parser_config()
+    except ImportError:
+        cfg = {}
+
+    channels = cfg.get("telegram_channels") or []
+    disk_links = cfg.get("disk_public_links") or []
+
+    st.markdown("#### 📱 Telegram-каналы")
+    st.caption("Один канал на строку: `@username`, `https://t.me/channel` или `https://t.me/c/ID`.")
+    tg_text = st.text_area(
+        "Каналы Telegram",
+        value="\n".join(channels),
+        height=120,
+        placeholder="@mychannel\nhttps://t.me/other_channel",
+        key=f"parser_tg_input_{block_id}",
+        label_visibility="collapsed",
     )
+
+    st.markdown("#### 📁 Ссылки Яндекс.Диска")
+    st.caption("Один URL на строку: публичная папка или файл с Яндекс.Диска.")
+    disk_text = st.text_area(
+        "Ссылки Диска",
+        value="\n".join(disk_links),
+        height=90,
+        placeholder="https://disk.yandex.ru/d/xxxxx",
+        key=f"parser_disk_input_{block_id}",
+        label_visibility="collapsed",
+    )
+
+    if st.button("💾 Сохранить источники", key=f"parser_save_sources_{block_id}", type="primary"):
+        new_channels = [s.strip() for s in tg_text.splitlines() if s.strip()]
+        new_disk = [s.strip() for s in disk_text.splitlines() if s.strip()]
+        ok, msg = _save_parser_sources(new_channels, new_disk)
+        if ok:
+            st.success(msg)
+        else:
+            st.error(f"Ошибка сохранения: {msg}")
+
+    st.divider()
+    st.markdown("**Секреты Telegram** (для приватных каналов) — задайте в `config/.env`:")
+    st.code("TELEGRAM_API_ID=...\nTELEGRAM_API_HASH=...\nTELEGRAM_PHONE=+7...", language="bash")
+    st.caption("Получить API ID и Hash: https://my.telegram.org/apps")
 
 
 def _content_parser(block_id: str) -> None:
@@ -2389,6 +2493,7 @@ def main() -> None:
         layout="wide",
     )
     _inject_theme_css()
+    _inject_block_palette_css()
     # Автосохранение Паспорт каждые 15 минут
     _passport_save_if_due(st.session_state.get("dashboard_messages", []))
     # Подтверждение после перезапуска (диалог с агентом не трогаем — он в session_state и сохраняется при rerun)

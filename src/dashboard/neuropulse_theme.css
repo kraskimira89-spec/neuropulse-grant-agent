@@ -92,11 +92,10 @@ h3,
   padding: 0 !important;
   margin-bottom: 16px !important;
   box-shadow: var(--np-shadow-sm) !important;
-  transition: box-shadow 0.25s ease, border-color 0.25s ease !important;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.2s !important;
   overflow: hidden !important;
 }
 [data-testid="stVerticalBlockBorderWrapper"]:hover {
-  border-color: var(--np-border-hover) !important;
   box-shadow: var(--np-shadow-hover) !important;
 }
 
