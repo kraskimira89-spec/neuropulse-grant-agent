@@ -252,6 +252,8 @@ def _settings_schedule(block_id: str) -> None:
         st.caption("Задайте YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в .env или в config (yandex_calendar). Пароль приложения: id.yandex.ru → Безопасность → Пароли приложений → Календарь.")
     days = st.number_input("Период (дней вперёд)", min_value=1, max_value=365, value=_get("dashboard_schedule_days", 30), key=f"ni_days_{block_id}")
     st.session_state["dashboard_schedule_days"] = days
+    min_year = st.number_input("Показывать события не раньше года", min_value=2020, max_value=2030, value=_get("dashboard_schedule_min_year", 2026), key=f"ni_min_year_schedule_{block_id}")
+    st.session_state["dashboard_schedule_min_year"] = min_year
     show_desc = st.checkbox("Показывать описание события", value=_get("dashboard_schedule_show_description", True), key=f"cb_desc_{block_id}")
     st.session_state["dashboard_schedule_show_description"] = show_desc
     path_override = st.text_input("Путь к локальному календарю (только для источника «Локальный файл»)", value=_get("dashboard_schedule_calendar_path", ""), key=f"path_cal_{block_id}")
@@ -271,11 +273,15 @@ def _content_schedule(block_id: str) -> None:
         return
     today = datetime.utcnow().date()
     end = today + timedelta(days=days)
+    min_year = _get("dashboard_schedule_min_year", 2026)
+    min_date = datetime(min_year, 1, 1).date()
     upcoming = []
     for ev in events:
         try:
             d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
         except (KeyError, ValueError):
+            continue
+        if d < min_date:
             continue
         if today <= d <= end:
             upcoming.append((d, ev.get("title", ""), ev.get("description", ""), ev.get("address", "")))
@@ -302,12 +308,17 @@ def block_schedule() -> None:
 
 # ---------- Блок: Предстоящие задачи / напоминания ----------
 def _settings_reminders(block_id: str) -> None:
-    st.caption("Те же события, что в «Ближайшие сроки», с разметкой по срочности (за 7/3/1 дн., сегодня, просрочено). Email-напоминания отправляет scripts/grant_reminders.py по расписанию.")
+    st.caption("Те же события, что в «Ближайшие сроки», с разметкой по срочности (за 7/3/1 дн., сегодня, просрочено).")
+    min_year = st.number_input("Показывать события не раньше года", min_value=2020, max_value=2030, value=_get("dashboard_reminders_min_year", 2026), key=f"ni_reminders_min_year_{block_id}")
+    st.session_state["dashboard_reminders_min_year"] = min_year
+    st.caption("Email-напоминания отправляет scripts/grant_reminders.py по расписанию.")
 
 
 def _content_reminders(block_id: str) -> None:
     events = _load_schedule_events()
     today = datetime.utcnow().date()
+    min_year = _get("dashboard_reminders_min_year", 2026)
+    cutoff = datetime(min_year, 1, 1).date()
     reminders_7 = []
     reminders_3 = []
     reminders_1 = []
@@ -317,6 +328,8 @@ def _content_reminders(block_id: str) -> None:
         try:
             d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
         except (KeyError, ValueError):
+            continue
+        if d < cutoff:
             continue
         days_left = (d - today).days
         title = ev.get("title", "Событие")
@@ -333,8 +346,8 @@ def _content_reminders(block_id: str) -> None:
     if not (reminders_7 or reminders_3 or reminders_1 or today_ev or overdue):
         st.caption("Нет событий в зоне напоминаний (за 7/3/1 дн., сегодня, просрочено). Добавьте события в календарь.")
         return
-    for d, title in overdue:
-        st.markdown(f"🔴 **Просрочено** ({abs((d - today).days)} дн.) — {title} (*{d}*)")
+    for d, title, days_over in overdue:
+        st.markdown(f"🔴 **Просрочено** ({abs(days_over)} дн.) — {title} (*{d}*)")
     for d, title in today_ev:
         st.markdown(f"🔥 **Сегодня** — {title}")
     for d, title in reminders_1:
@@ -364,9 +377,11 @@ def _load_kkt() -> list[dict]:
 
 
 def _settings_kkt(block_id: str) -> None:
+    min_year = st.number_input("Показывать ККТ с года", min_value=2020, max_value=2030, value=_get("dashboard_kkt_min_year", 2026), key=f"ni_kkt_min_year_{block_id}")
+    st.session_state["dashboard_kkt_min_year"] = min_year
     st.caption(
-        "ККТ создаются и редактируются в личном кабинете АНО «Гранты Ямала» (раздел «Ключевые контрольные точки» / «Мониторинг»). "
-        "На дашборде отображается локальная копия из data/grant_kkt.json."
+        "ККТ создаются и редактируются в личном кабинете АНО «Гранты Ямала». "
+        "На дашборде — локальная копия из data/grant_kkt.json."
     )
 
 
@@ -375,11 +390,18 @@ def _content_kkt(block_id: str) -> None:
     if not points:
         st.info("Добавьте данные в data/grant_kkt.json (можно скопировать из data/grant_kkt.example.json).")
         return
+    min_year = _get("dashboard_kkt_min_year", 2026)
+    try:
+        filtered = [p for p in points if not (p.get("date_end") or "").strip() or int(((p.get("date_end") or "").strip())[:4]) >= min_year]
+    except ValueError:
+        filtered = points
+    if not filtered:
+        st.caption(f"Нет ККТ с годом срока не раньше {min_year}. Измените фильтр в настройках блока.")
+        return
     today = datetime.utcnow().date()
     rows = []
-    for i, p in enumerate(points, 1):
+    for i, p in enumerate(filtered, 1):
         desc = p.get("description", "")
-        date_end = (p.get("date_end") or "").strip()
         expected = (p.get("expected_result") or "").strip()
         status = p.get("status", "not_started")
         st_label = STATUS_LABELS.get(status, status)
@@ -398,6 +420,49 @@ def _content_kkt(block_id: str) -> None:
 
 def block_kkt() -> None:
     _block_with_settings("🎯 Ключевые контрольные точки", "kkt", _content_kkt, _settings_kkt)
+
+
+def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) -> list[dict]:
+    """Объединяет события из календаря гранта (Яндекс или grant_calendar.json) и ККТ. Фильтр: дата не раньше min_year. Формат: {date, title, description, address}."""
+    today = datetime.utcnow().date()
+    end = today + timedelta(days=days_ahead)
+    cutoff = datetime(min_year, 1, 1).date()
+    out = []
+    for ev in _load_schedule_events():
+        try:
+            d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
+        except (KeyError, ValueError):
+            continue
+        if d < cutoff:
+            continue
+        if today <= d <= end:
+            out.append({
+                "date": d.isoformat(),
+                "title": ev.get("title", "Событие"),
+                "description": ev.get("description", ""),
+                "address": ev.get("address", ""),
+            })
+    for p in _load_kkt():
+        date_end = (p.get("date_end") or "").strip()
+        if not date_end:
+            continue
+        try:
+            d = datetime.strptime(date_end[:10], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if d < cutoff:
+            continue
+        if today <= d <= end:
+            desc = p.get("description", "")
+            expected = (p.get("expected_result") or "").strip()
+            out.append({
+                "date": d.isoformat(),
+                "title": f"ККТ: {desc}" if desc else "ККТ",
+                "description": f"Ожидаемый результат: {expected}" if expected else "",
+                "address": "",
+            })
+    out.sort(key=lambda x: (x["date"], x["title"]))
+    return out
 
 
 # ---------- Блок 2: Аудит чата ----------
@@ -810,13 +875,22 @@ def block_documents_archive() -> None:
 
 # ---------- Блок: Календарь (виджет месяц) ----------
 def _settings_calendar_month(block_id: str) -> None:
-    st.caption("Сетка текущего месяца. Дни с событиями выделены. Источник событий — тот же, что в «Ближайшие сроки».")
+    st.caption("Сетка месяца. Дни с событиями выделены. Источник событий — тот же, что в «Ближайшие сроки».")
+    year = st.number_input("Год", min_value=2024, max_value=2030, value=_get("dashboard_calendar_month_year", datetime.utcnow().year), key=f"ni_cal_year_{block_id}")
+    st.session_state["dashboard_calendar_month_year"] = year
+    month = st.number_input("Месяц", min_value=1, max_value=12, value=_get("dashboard_calendar_month_month", datetime.utcnow().month), key=f"ni_cal_month_{block_id}")
+    st.session_state["dashboard_calendar_month_month"] = month
+    min_year = st.number_input("События не раньше года", min_value=2020, max_value=2030, value=_get("dashboard_calendar_month_min_year", 2026), key=f"ni_cal_min_year_{block_id}")
+    st.session_state["dashboard_calendar_month_min_year"] = min_year
 
 
 def _content_calendar_month(block_id: str) -> None:
     events = _load_schedule_events()
     today = datetime.utcnow().date()
-    year, month = today.year, today.month
+    year = _get("dashboard_calendar_month_year", today.year)
+    month = _get("dashboard_calendar_month_month", today.month)
+    min_year = _get("dashboard_calendar_month_min_year", 2026)
+    min_date = datetime(min_year, 1, 1).date()
     import calendar
     cal = calendar.Calendar(firstweekday=0)
     weeks = cal.monthdayscalendar(year, month)
@@ -825,6 +899,8 @@ def _content_calendar_month(block_id: str) -> None:
         try:
             d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
         except (KeyError, ValueError):
+            continue
+        if d < min_date:
             continue
         if d.year == year and d.month == month:
             events_by_day.setdefault(d.day, []).append(ev.get("title", "Событие"))
@@ -853,51 +929,56 @@ def block_calendar_month() -> None:
 def _settings_neuropulse_cal(block_id: str) -> None:
     days = st.number_input("Период (дней вперёд)", min_value=1, max_value=365, value=_get("dashboard_neuropulse_days", 60), key=f"ni_neuropulse_days_{block_id}")
     st.session_state["dashboard_neuropulse_days"] = days
+    min_year = st.number_input("События не раньше года", min_value=2020, max_value=2030, value=_get("dashboard_neuropulse_min_year", 2026), key=f"ni_neuropulse_min_year_{block_id}")
+    st.session_state["dashboard_neuropulse_min_year"] = min_year
     show_desc = st.checkbox("Показывать описание", value=_get("dashboard_neuropulse_show_desc", True), key=f"cb_neuropulse_desc_{block_id}")
     st.session_state["dashboard_neuropulse_show_desc"] = show_desc
-    st.caption("Календарь «Нейропульс» создайте в calendar.yandex.ru. URL возьмите из Экспорт календаря и укажите в config/.env: YANDEX_CALENDAR_NEUROPULSE_URL.")
+    st.caption("Показываются все события гранта (календарь + ККТ). Виджет — календарь Яндекса (YANDEX_CALENDAR_NEUROPULSE_EMBED_URL).")
+    st.divider()
+    st.caption("**Выгрузка в Яндекс.Календарь:** события из grant_calendar.json и ККТ из grant_kkt.json (с 2026 г.) можно создать в календаре.")
+    if st.button("Выгрузить события гранта и ККТ в Яндекс.Календарь", key=f"btn_push_cal_{block_id}"):
+        try:
+            from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, get_yandex_calendar_config
+            cfg = get_yandex_calendar_config()
+            url = (cfg.get("calendar_url") or cfg.get("neuropulse_calendar_url") or "").strip()
+            if not url:
+                st.error("Задайте YANDEX_CALENDAR_URL или YANDEX_CALENDAR_NEUROPULSE_URL в config/.env.")
+            else:
+                created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=url)
+                st.success(f"Создано событий в календаре: {created}. Ошибок: {errors}. Обновите календарь в calendar.yandex.ru.")
+        except Exception as e:
+            st.error(f"Ошибка выгрузки: {e}")
 
 
 def _content_neuropulse_cal(block_id: str) -> None:
     try:
-        from src.yandex_calendar_client import fetch_neuropulse_events, get_yandex_calendar_config
+        from src.yandex_calendar_client import get_yandex_calendar_config
     except ImportError:
         st.info("Модуль Яндекс Календаря недоступен.")
         return
     cfg = get_yandex_calendar_config()
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
-    caldav_url = (cfg.get("neuropulse_calendar_url") or "").strip()
-    has_caldav = caldav_url and cfg.get("user") and cfg.get("password")
 
-    # Виджет календаря — как в Яндексе: embed/week с layer_ids и tz_id (только публичный адрес, без private_token)
+    # Виджет календаря Яндекса (если задан embed URL)
     if embed_url:
         safe_url = embed_url.replace('"', "&quot;").replace("<", "").replace(">", "")
-        # Код как в «Вставка на сайт»: width 800, height 450, frameborder 0, border #eee
         iframe_html = (
             f'<iframe src="{safe_url}" width="800" height="450" frameborder="0" '
             'style="border: 1px solid #eee; max-width: 100%; box-sizing: border-box;"></iframe>'
         )
         st.components.v1.html(iframe_html, height=460)
-    if not embed_url and not has_caldav:
-        st.info(
-            "Задайте календарь «Нейропульс»: **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** (публичный адрес из Экспорт в calendar.yandex.ru) "
-            "и/или **YANDEX_CALENDAR_NEUROPULSE_URL** (CalDAV) + учётные данные в config/.env."
-        )
-        return
-    if not has_caldav:
-        st.caption("Список событий ниже загружается по CalDAV — укажите YANDEX_CALENDAR_NEUROPULSE_URL, YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD.")
-        return
+    else:
+        st.caption("Чтобы встроить виджет календаря, укажите **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** в config/.env (Экспорт → вставка на сайт в calendar.yandex.ru).")
 
-    # Список событий по CalDAV
-    if embed_url:
-        st.markdown("**Список событий (CalDAV)**")
+    # Список: все события гранта и ККТ
+    st.markdown("**Все события гранта и ККТ** (календарь + ключевые контрольные точки)")
     days = _get("dashboard_neuropulse_days", 60)
+    min_year = _get("dashboard_neuropulse_min_year", 2026)
     show_desc = _get("dashboard_neuropulse_show_desc", True)
     today = datetime.utcnow().date()
-    end = today + timedelta(days=days)
-    events = fetch_neuropulse_events(today, end)
+    events = _load_all_grant_and_kkt_events(days_ahead=days, min_year=min_year)
     if not events:
-        st.caption("В календаре «Нейропульс» за выбранный период событий нет.")
+        st.caption("За выбранный период событий гранта и ККТ нет. Добавьте данные в grant_calendar.json или grant_kkt.json (и выберите источник «Яндекс Календарь» в блоке «Ближайшие сроки»).")
         return
     # Экранирование для HTML
     def esc(s: str) -> str:
@@ -943,7 +1024,7 @@ def _content_neuropulse_cal(block_id: str) -> None:
   .neuropulse-addr {{ font-size: 0.85em; color: #666; margin-left: 0.5rem; }}
 </style>
 <div class="neuropulse-frame">
-  <div class="neuropulse-title">📅 Календарь Нейропульс</div>
+  <div class="neuropulse-title">📅 Все события гранта и ККТ</div>
   {inner}
 </div>
 """
@@ -1394,11 +1475,17 @@ def main() -> None:
         st.divider()
         block_info_activity()
         st.divider()
-        block_schedule()
-        st.divider()
-        block_calendar_month()
-        st.divider()
-        block_reminders()
+        # Ближайшие сроки, Календарь (месяц), Предстоящие задачи, Календарь Нейропульс — рядом в 2x2
+        row_cal_1, row_cal_2 = st.columns(2)
+        with row_cal_1:
+            block_schedule()
+        with row_cal_2:
+            block_calendar_month()
+        row_cal_3, row_cal_4 = st.columns(2)
+        with row_cal_3:
+            block_reminders()
+        with row_cal_4:
+            block_neuropulse_calendar()
         st.divider()
         block_audit()
         st.divider()
@@ -1416,8 +1503,6 @@ def main() -> None:
         block_contacts()
         st.divider()
         block_notifications()
-        st.divider()
-        block_neuropulse_calendar()
         st.divider()
         block_communications()
         st.divider()
