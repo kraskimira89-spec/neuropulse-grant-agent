@@ -93,6 +93,18 @@ h3,
   box-shadow: var(--np-shadow-sm) !important;
   transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.2s !important;
   overflow: hidden !important;
+  padding-top: 0px !important;
+}
+
+/* Маркер-div (np-bm-*) не должен занимать вертикальное место */
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > div:first-child,
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stMarkdown"]:has([class^="np-bm-"]),
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stMarkdownContainer"]:has([class^="np-bm-"]) {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
 }
 [data-testid="stVerticalBlock"]:has([class^="np-bm-"]):hover {
   box-shadow: var(--np-shadow-hover) !important;
