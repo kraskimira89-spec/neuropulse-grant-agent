@@ -18,6 +18,20 @@ if str(PROJECT_ROOT) not in sys.path:
 
 CALENDAR_PATH = PROJECT_ROOT / "data" / "grant_calendar.json"
 CALENDAR_EXAMPLE = PROJECT_ROOT / "data" / "grant_calendar.example.json"
+NOTIFICATION_SETTINGS_PATH = PROJECT_ROOT / "data" / "notification_settings.json"
+NOTIFICATION_SETTINGS_EXAMPLE = PROJECT_ROOT / "data" / "notification_settings.example.json"
+
+
+def load_notification_settings() -> dict:
+    """Читает data/notification_settings.json (email, reminders_enabled)."""
+    for path in (NOTIFICATION_SETTINGS_PATH, NOTIFICATION_SETTINGS_EXAMPLE):
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return {}
 
 
 def load_calendar() -> list[dict]:
@@ -50,8 +64,8 @@ def events_in_days(events: list[dict], today, days: int) -> list[dict]:
     return out
 
 
-def send_reminder_emails(events_3days: list[dict], chat_url: str) -> None:
-    """Отправляет письма с предложением создать документы по событиям."""
+def send_reminder_emails(events_3days: list[dict], chat_url: str, to_email: str | None = None) -> None:
+    """Отправляет письма с предложением создать документы по событиям. to_email — из data/notification_settings.json или None (тогда NOTIFICATION_EMAIL из .env)."""
     from src.email_sender import send_email, is_configured
     if not is_configured():
         print("Почта не настроена (SMTP_*, NOTIFICATION_EMAIL). Уведомления не отправлены.")
@@ -77,7 +91,7 @@ def send_reminder_emails(events_3days: list[dict], chat_url: str) -> None:
         if chat_url:
             body += f"Ссылка на чат: {chat_url}\n\n"
         body += "После подтверждения документ будет сформирован в Word, отправлен на почту и добавлен в базу знаний агента."
-        send_email(subject=f"Грант: через 3 дня — {title}", body=body)
+        send_email(to_email=to_email, subject=f"Грант: через 3 дня — {title}", body=body)
         print(f"Отправлено уведомление: {title}")
 
 
@@ -92,10 +106,16 @@ def main() -> None:
     days_before = int(notif_cfg.get("days_before_event", 3))
     chat_url = (notif_cfg.get("chat_url") or "").strip()
 
+    ui_settings = load_notification_settings()
+    reminders_enabled = ui_settings.get("reminders_enabled", True)
+    to_email = (ui_settings.get("email") or "").strip() or None
+
     events_3days = events_in_days(events, today, days_before)
-    if events_3days:
+    if events_3days and reminders_enabled:
         print(f"События через {days_before} дн.: отправка уведомлений на почту...")
-        send_reminder_emails(events_3days, chat_url)
+        send_reminder_emails(events_3days, chat_url, to_email=to_email)
+    elif events_3days and not reminders_enabled:
+        print("Напоминания отключены в data/notification_settings.json (reminders_enabled: false). Уведомления не отправлены.")
 
     window_days = 30
     upcoming = []

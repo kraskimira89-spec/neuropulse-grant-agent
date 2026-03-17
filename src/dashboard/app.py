@@ -44,6 +44,14 @@ GRANT_DASHBOARD_PATH = PROJECT_ROOT / "data" / "grant_project_dashboard.json"
 GRANT_DASHBOARD_EXAMPLE = PROJECT_ROOT / "data" / "grant_project_dashboard.example.json"
 KKT_PATH = PROJECT_ROOT / "data" / "grant_kkt.json"
 KKT_EXAMPLE = PROJECT_ROOT / "data" / "grant_kkt.example.json"
+RISKS_PATH = PROJECT_ROOT / "data" / "grant_risks.json"
+RISKS_EXAMPLE = PROJECT_ROOT / "data" / "grant_risks.example.json"
+COMMUNICATIONS_PATH = PROJECT_ROOT / "data" / "grant_communications.json"
+COMMUNICATIONS_EXAMPLE = PROJECT_ROOT / "data" / "grant_communications.example.json"
+DOCUMENTS_ARCHIVE_PATH = PROJECT_ROOT / "data" / "grant_documents_archive.json"
+DOCUMENTS_ARCHIVE_EXAMPLE = PROJECT_ROOT / "data" / "grant_documents_archive.example.json"
+NOTIFICATION_SETTINGS_PATH = PROJECT_ROOT / "data" / "notification_settings.json"
+NOTIFICATION_SETTINGS_EXAMPLE = PROJECT_ROOT / "data" / "notification_settings.example.json"
 
 # Папка «Паспорт»: паспорт проекта и краткая история диалогов (автосохранение раз в 15 мин)
 PASSPORT_DIR = PROJECT_ROOT / "Паспорт"
@@ -290,6 +298,55 @@ def _content_schedule(block_id: str) -> None:
 
 def block_schedule() -> None:
     _block_with_settings("📅 Ближайшие сроки по гранту", "schedule", _content_schedule, _settings_schedule)
+
+
+# ---------- Блок: Предстоящие задачи / напоминания ----------
+def _settings_reminders(block_id: str) -> None:
+    st.caption("Те же события, что в «Ближайшие сроки», с разметкой по срочности (за 7/3/1 дн., сегодня, просрочено). Email-напоминания отправляет scripts/grant_reminders.py по расписанию.")
+
+
+def _content_reminders(block_id: str) -> None:
+    events = _load_schedule_events()
+    today = datetime.utcnow().date()
+    reminders_7 = []
+    reminders_3 = []
+    reminders_1 = []
+    today_ev = []
+    overdue = []
+    for ev in events:
+        try:
+            d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
+        except (KeyError, ValueError):
+            continue
+        days_left = (d - today).days
+        title = ev.get("title", "Событие")
+        if days_left < 0:
+            overdue.append((d, title, days_left))
+        elif days_left == 0:
+            today_ev.append((d, title))
+        elif days_left == 1:
+            reminders_1.append((d, title))
+        elif days_left == 3:
+            reminders_3.append((d, title))
+        elif days_left == 7:
+            reminders_7.append((d, title))
+    if not (reminders_7 or reminders_3 or reminders_1 or today_ev or overdue):
+        st.caption("Нет событий в зоне напоминаний (за 7/3/1 дн., сегодня, просрочено). Добавьте события в календарь.")
+        return
+    for d, title in overdue:
+        st.markdown(f"🔴 **Просрочено** ({abs((d - today).days)} дн.) — {title} (*{d}*)")
+    for d, title in today_ev:
+        st.markdown(f"🔥 **Сегодня** — {title}")
+    for d, title in reminders_1:
+        st.markdown(f"❗ **За 1 дн.** — {title} (*{d}*)")
+    for d, title in reminders_3:
+        st.markdown(f"🔔 **За 3 дн.** — {title} (*{d}*)")
+    for d, title in reminders_7:
+        st.markdown(f"⚠️ **За 7 дн.** — {title} (*{d}*)")
+
+
+def block_reminders() -> None:
+    _block_with_settings("🔔 Предстоящие задачи / напоминания", "reminders", _content_reminders, _settings_reminders)
 
 
 # ---------- Блок: Ключевые контрольные точки (ККТ), АНО «Гранты Ямала» ----------
@@ -546,6 +603,250 @@ def _content_vs(block_id: str) -> None:
 
 def block_vector_store() -> None:
     _block_with_settings("📚 База знаний (Vector Store)", "vector_store", _content_vs, _settings_vs)
+
+
+# ---------- Блок: Управление рисками ----------
+def _load_risks() -> list[dict]:
+    for path in (RISKS_PATH, RISKS_EXAMPLE):
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, list) else data.get("risks", [])
+            except Exception as e:
+                logger.warning("Ошибка чтения рисков %s: %s", path.name, e)
+    return []
+
+
+def _settings_risks(block_id: str) -> None:
+    st.caption("Данные из data/grant_risks.json (скопируйте из grant_risks.example.json). Редактирование — вручную в файле или добавьте форму в настройках.")
+
+
+def _content_risks(block_id: str) -> None:
+    items = _load_risks()
+    if not items:
+        st.info("Добавьте данные в data/grant_risks.json (пример: data/grant_risks.example.json).")
+        return
+    rows = []
+    for r in items:
+        rows.append({
+            "Описание": r.get("description", ""),
+            "Вероятность": r.get("probability", ""),
+            "Влияние": r.get("impact", ""),
+            "Митигация": r.get("mitigation", ""),
+            "Статус": r.get("status", ""),
+        })
+    st.dataframe(rows, use_container_width=True, hide_index=True, column_config={"Описание": st.column_config.TextColumn("Описание", width="medium"), "Митигация": st.column_config.TextColumn("Митигация", width="medium")})
+
+
+def block_risks() -> None:
+    _block_with_settings("⚠️ Управление рисками", "risks", _content_risks, _settings_risks)
+
+
+# ---------- Блок: Статистика использования агента ----------
+def _settings_agent_stats(block_id: str) -> None:
+    days = st.number_input("Период (дней назад)", min_value=1, max_value=365, value=_get("dashboard_agent_stats_days", 30), key=f"ni_agent_stats_days_{block_id}")
+    st.session_state["dashboard_agent_stats_days"] = days
+
+
+def _content_agent_stats(block_id: str) -> None:
+    days = _get("dashboard_agent_stats_days", 30)
+    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat() + "Z"
+    if not AUDIT_LOG.exists():
+        st.caption("Файл аудита чата пуст (data/chat_audit.jsonl).")
+        return
+    records = []
+    try:
+        with open(AUDIT_LOG, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                    if (r.get("ts") or "") >= cutoff:
+                        records.append(r)
+                except json.JSONDecodeError:
+                    continue
+    except Exception as e:
+        st.error(f"Ошибка чтения аудита: {e}")
+        return
+    if not records:
+        st.caption(f"За последние {days} дн. записей нет.")
+        return
+    by_day: dict[str, dict[str, Any]] = {}
+    for r in records:
+        ts = (r.get("ts") or "")[:10]
+        if ts not in by_day:
+            by_day[ts] = {"count": 0, "prompt_len": 0, "reply_len": 0}
+        by_day[ts]["count"] += 1
+        by_day[ts]["prompt_len"] += r.get("prompt_len", 0)
+        by_day[ts]["reply_len"] += r.get("reply_len", 0)
+    total_requests = sum(d["count"] for d in by_day.values())
+    total_prompt = sum(d["prompt_len"] for d in by_day.values())
+    total_reply = sum(d["reply_len"] for d in by_day.values())
+    st.metric("Запросов к агенту", total_requests)
+    st.metric("Символов (запросы)", total_prompt)
+    st.metric("Символов (ответы)", total_reply)
+    sorted_days = sorted(by_day.items(), key=lambda x: x[0])
+    if sorted_days:
+        chart_data = [{"Дата": d, "Запросов": v["count"]} for d, v in sorted_days]
+        st.bar_chart(chart_data, x="Дата", y="Запросов", height=200)
+
+
+def block_agent_stats() -> None:
+    _block_with_settings("📈 Статистика использования агента", "agent_stats", _content_agent_stats, _settings_agent_stats)
+
+
+# ---------- Блок: Настройки уведомлений ----------
+def _load_notification_settings() -> dict:
+    for path in (NOTIFICATION_SETTINGS_PATH, NOTIFICATION_SETTINGS_EXAMPLE):
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning("Ошибка чтения notification_settings %s: %s", path.name, e)
+    return {"email": "", "reminders_enabled": True, "days_before": [7, 3, 1]}
+
+
+def _save_notification_settings(data: dict) -> bool:
+    try:
+        NOTIFICATION_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(NOTIFICATION_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.warning("Ошибка сохранения notification_settings: %s", e)
+        return False
+
+
+def _settings_notifications(block_id: str) -> None:
+    data = _load_notification_settings()
+    email = st.text_input("Email для напоминаний", value=data.get("email", ""), key=f"notif_email_{block_id}")
+    enabled = st.checkbox("Включить напоминания по срокам", value=data.get("reminders_enabled", True), key=f"notif_enabled_{block_id}")
+    if st.button("Сохранить настройки", key=f"notif_save_{block_id}"):
+        new_data = {"email": email.strip(), "reminders_enabled": enabled, "days_before": data.get("days_before", [7, 3, 1])}
+        if _save_notification_settings(new_data):
+            st.success("Сохранено. scripts/grant_reminders.py при запуске может учитывать email из data/notification_settings.json.")
+        else:
+            st.error("Ошибка сохранения.")
+    st.caption("Получатель по умолчанию также задаётся в config/.env: NOTIFICATION_EMAIL. Отправка писем — scripts/grant_reminders.py.")
+
+
+def _content_notifications(block_id: str) -> None:
+    data = _load_notification_settings()
+    st.caption(f"Email: {data.get('email') or '(не задан, используется NOTIFICATION_EMAIL из .env)'}")
+    st.caption(f"Напоминания: {'включены' if data.get('reminders_enabled', True) else 'выключены'}.")
+
+
+def block_notifications() -> None:
+    _block_with_settings("🔔 Настройки уведомлений", "notifications", _content_notifications, _settings_notifications)
+
+
+# ---------- Блок: Коммуникации с грантодателем ----------
+def _load_communications() -> list[dict]:
+    for path in (COMMUNICATIONS_PATH, COMMUNICATIONS_EXAMPLE):
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, list) else data.get("items", [])
+            except Exception as e:
+                logger.warning("Ошибка чтения communications %s: %s", path.name, e)
+    return []
+
+
+def _settings_communications(block_id: str) -> None:
+    st.caption("Данные из data/grant_communications.json (пример: grant_communications.example.json).")
+
+
+def _content_communications(block_id: str) -> None:
+    items = _load_communications()
+    if not items:
+        st.info("Добавьте данные в data/grant_communications.json.")
+        return
+    rows = [{"Дата": c.get("date", ""), "Тема": c.get("topic", ""), "Тип": c.get("type", ""), "Статус": c.get("status", "")} for c in items]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def block_communications() -> None:
+    _block_with_settings("📧 Коммуникации с грантодателем", "communications", _content_communications, _settings_communications)
+
+
+# ---------- Блок: Файловый архив ----------
+def _load_documents_archive() -> list[dict]:
+    for path in (DOCUMENTS_ARCHIVE_PATH, DOCUMENTS_ARCHIVE_EXAMPLE):
+        if path.exists():
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, list) else data.get("documents", [])
+            except Exception as e:
+                logger.warning("Ошибка чтения documents_archive %s: %s", path.name, e)
+    return []
+
+
+def _settings_documents_archive(block_id: str) -> None:
+    st.caption("Данные из data/grant_documents_archive.json (пример: grant_documents_archive.example.json).")
+
+
+def _content_documents_archive(block_id: str) -> None:
+    items = _load_documents_archive()
+    if not items:
+        st.info("Добавьте данные в data/grant_documents_archive.json.")
+        return
+    rows = [{"Название": d.get("name", ""), "Тип": d.get("type", ""), "Статус": d.get("status", ""), "Дата": d.get("date", "")} for d in items]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    for i, d in enumerate(items):
+        link = (d.get("link") or "").strip()
+        if link:
+            st.link_button(f"Открыть: {(d.get('name') or '')[:40]}", link, key=f"archive_link_{block_id}_{i}")
+
+
+def block_documents_archive() -> None:
+    _block_with_settings("📁 Файловый архив", "documents_archive", _content_documents_archive, _settings_documents_archive)
+
+
+# ---------- Блок: Календарь (виджет месяц) ----------
+def _settings_calendar_month(block_id: str) -> None:
+    st.caption("Сетка текущего месяца. Дни с событиями выделены. Источник событий — тот же, что в «Ближайшие сроки».")
+
+
+def _content_calendar_month(block_id: str) -> None:
+    events = _load_schedule_events()
+    today = datetime.utcnow().date()
+    year, month = today.year, today.month
+    import calendar
+    cal = calendar.Calendar(firstweekday=0)
+    weeks = cal.monthdayscalendar(year, month)
+    events_by_day: dict[int, list[str]] = {}
+    for ev in events:
+        try:
+            d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
+        except (KeyError, ValueError):
+            continue
+        if d.year == year and d.month == month:
+            events_by_day.setdefault(d.day, []).append(ev.get("title", "Событие"))
+    weekdays = "Пн Вт Ср Чт Пт Сб Вс".split()
+    header = " | ".join(weekdays)
+    st.caption(f"**{year}, {month}**")
+    lines = [header]
+    for week in weeks:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append("  ")
+            else:
+                mark = "•" if day in events_by_day else " "
+                row.append(f"{day:2}{mark}")
+        lines.append(" | ".join(row))
+    st.text("\n".join(lines))
+    st.caption("• — день с событием. Список событий по дням — в блоке «Ближайшие сроки».")
+
+
+def block_calendar_month() -> None:
+    _block_with_settings("📅 Календарь (месяц)", "calendar_month", _content_calendar_month, _settings_calendar_month)
 
 
 # ---------- Блок: Календарь Нейропульс (отдельный фрейм) ----------
@@ -973,6 +1274,47 @@ def _passport_save_if_due(session_messages: list) -> None:
         git_push_if_changes(commit_message="Автосохранение: паспорт и история диалогов")
 
 
+# ---------- Проверка отчёта агентом ----------
+def _extract_text_from_uploaded_file(uploaded_file) -> str | None:
+    """Извлекает текст из загруженного файла (.txt или .docx). Макс. 50_000 символов."""
+    max_chars = 50_000
+    try:
+        if uploaded_file.name.lower().endswith(".txt"):
+            text = uploaded_file.getvalue().decode("utf-8", errors="replace")
+        elif uploaded_file.name.lower().endswith(".docx"):
+            import io
+            from docx import Document
+            doc = Document(io.BytesIO(uploaded_file.getvalue()))
+            text = "\n".join(p.text for p in doc.paragraphs)
+        else:
+            return None
+        return text[:max_chars] + ("…" if len(text) > max_chars else "")
+    except Exception as e:
+        logger.warning("Ошибка извлечения текста из файла: %s", e)
+        return None
+
+
+def _block_check_report() -> None:
+    """Кнопка «Проверить отчёт агентом»: загрузка файла, отправка текста агенту."""
+    if not _ensure_conversation():
+        return
+    with st.expander("📄 Проверить отчёт агентом", expanded=False):
+        st.caption("Загрузите .txt или .docx — агент проверит отчёт на полноту и соответствие грантовым требованиям.")
+        uploaded = st.file_uploader("Файл отчёта", type=["txt", "docx"], key="dashboard_report_upload")
+        if uploaded and st.button("Отправить на проверку", key="btn_check_report"):
+            text = _extract_text_from_uploaded_file(uploaded)
+            if not text:
+                st.error("Не удалось прочитать текст из файла. Поддерживаются .txt и .docx.")
+                return
+            prompt = "Проверь этот отчёт на полноту и соответствие грантовым требованиям. Укажи, если чего-то не хватает или есть замечания.\n\n---\n\n" + text
+            st.session_state.dashboard_messages.append({"role": "user", "content": f"[Проверка отчёта: {uploaded.name}]"})
+            with st.spinner("Агент проверяет отчёт..."):
+                reply = _send_to_agent(prompt)
+                st.session_state.dashboard_messages.append({"role": "assistant", "content": reply or "Ошибка запроса к агенту."})
+            st.success("Ответ агента добавлен в диалог ниже.")
+            st.rerun()
+
+
 # ---------- Окно диалога с агентом ----------
 def block_chat() -> None:
     """Окно диалога с агентом. При нажатии на быстрые действия по гранту их формулировки (prompt из config) отправляются агенту и ответ показывается здесь."""
@@ -983,6 +1325,8 @@ def block_chat() -> None:
 
     if "dashboard_messages" not in st.session_state:
         st.session_state.dashboard_messages = []
+
+    _block_check_report()
 
     # Обработка очереди от быстрых действий: формулировки (prompt) из кнопок уходят сюда
     if "dashboard_prompt_to_send" in st.session_state and st.session_state.dashboard_prompt_to_send:
@@ -1019,16 +1363,17 @@ def main() -> None:
     )
     # Автосохранение Паспорт каждые 15 минут
     _passport_save_if_due(st.session_state.get("dashboard_messages", []))
-    # Подтверждение после перезапуска
+    # Подтверждение после перезапуска (диалог с агентом не трогаем — он в session_state и сохраняется при rerun)
     if st.session_state.get("dashboard_restart_requested"):
-        st.success("✅ Дашборд перезапущен. Данные обновлены.")
+        n_msg = len(st.session_state.get("dashboard_messages", []))
+        st.success("✅ Дашборд перезапущен. Данные обновлены." + (f" Диалог с агентом сохранён ({n_msg} сообщ.)." if n_msg else ""))
         st.session_state["dashboard_restart_requested"] = False
     head_col1, head_col2 = st.columns([4, 1])
     with head_col1:
         st.title("📋 Дашборд проекта НейроПульс")
         st.caption("Мониторинг гранта (этапы, бюджет, показатели), сроки, аудит чата, статус агента. Справа — диалог с агентом и быстрые действия.")
     with head_col2:
-        if st.button("🔄 Перезапустите дашборд", type="primary", help="Обновить данные и перезагрузить страницу"):
+        if st.button("🔄 Перезапустите дашборд", type="primary", help="Обновить данные и перезагрузить страницу. Диалог с агентом сохраняется."):
             st.session_state["dashboard_restart_requested"] = True
             st.rerun()
 
@@ -1045,11 +1390,19 @@ def main() -> None:
         st.divider()
         block_indicators()
         st.divider()
+        block_risks()
+        st.divider()
         block_info_activity()
         st.divider()
         block_schedule()
         st.divider()
+        block_calendar_month()
+        st.divider()
+        block_reminders()
+        st.divider()
         block_audit()
+        st.divider()
+        block_agent_stats()
         st.divider()
         block_status()
 
@@ -1062,7 +1415,13 @@ def main() -> None:
         st.divider()
         block_contacts()
         st.divider()
+        block_notifications()
+        st.divider()
         block_neuropulse_calendar()
+        st.divider()
+        block_communications()
+        st.divider()
+        block_documents_archive()
         st.divider()
         block_links()
         st.divider()
