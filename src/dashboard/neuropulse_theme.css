@@ -1,260 +1,474 @@
-/* НейроПульс — тема дашборда: спокойные медицинские тона, читаемость, карточки */
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+/* ============================================================
+   НейроПульс — тема дашборда
+   Шрифт: Inter · Палитра: спокойные синие/серые тона
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* ── Переменные ─────────────────────────────────────────── */
 :root {
-  --np-bg: #f8fafc;
-  --np-surface: #ffffff;
-  --np-text-primary: #0f172a;
-  --np-text-secondary: #475569;
-  --np-text-tertiary: #64748b;
-  --np-border: #e2e8f0;
-  --np-accent: #3b82f6;
-  --np-accent-light: #dbeafe;
-  --np-success: #22c55e;
-  --np-warning: #f59e0b;
-  --np-danger: #ef4444;
-  --np-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.02);
-  --np-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.05);
-  --np-radius: 20px;
-  --np-radius-sm: 16px;
+  --np-bg:            #f0f4f8;
+  --np-surface:       #ffffff;
+  --np-surface-2:     #f8fafc;
+  --np-text-primary:  #0f172a;
+  --np-text-secondary:#475569;
+  --np-text-muted:    #94a3b8;
+  --np-border:        #e2e8f0;
+  --np-border-hover:  #cbd5e1;
+  --np-accent:        #3b82f6;
+  --np-accent-dark:   #2563eb;
+  --np-accent-light:  #dbeafe;
+  --np-success:       #22c55e;
+  --np-success-light: #dcfce7;
+  --np-warning:       #f59e0b;
+  --np-warning-light: #fef3c7;
+  --np-danger:        #ef4444;
+  --np-danger-light:  #fee2e2;
+  --np-shadow-xs:     0 1px 3px rgba(15,23,42,0.06);
+  --np-shadow-sm:     0 4px 16px rgba(15,23,42,0.07);
+  --np-shadow-md:     0 8px 28px rgba(15,23,42,0.10);
+  --np-shadow-hover:  0 10px 32px rgba(59,130,246,0.12);
+  --np-radius:        18px;
+  --np-radius-sm:     12px;
+  --np-radius-xs:     8px;
 }
 
-/* Фон страницы и типографика */
-.stApp, [data-testid="stAppViewContainer"] {
+/* ── Фон страницы ───────────────────────────────────────── */
+.stApp,
+[data-testid="stAppViewContainer"] {
   background: var(--np-bg) !important;
 }
 .main .block-container {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
   color: var(--np-text-primary);
   max-width: 1600px;
-  padding: 24px;
+  padding: 20px 28px !important;
 }
 
-/* Заголовки */
-h1, [data-testid="stMarkdown"] h1 {
-  font-size: 28px !important;
+/* ── Заголовок страницы h1 ──────────────────────────────── */
+h1,
+[data-testid="stMarkdown"] h1 {
+  font-size: 26px !important;
+  font-weight: 700 !important;
+  color: var(--np-text-primary) !important;
+  letter-spacing: -0.4px;
+}
+
+/* ── Заголовок блока h2 / h3 (subheader внутри карточки) ── */
+h2,
+[data-testid="stMarkdown"] h2,
+[data-testid="stHeadingWithActionElements"] h2 {
+  font-size: 15px !important;
   font-weight: 600 !important;
   color: var(--np-text-primary) !important;
-  margin-bottom: 8px !important;
-}
-h2, [data-testid="stMarkdown"] h2 {
-  font-size: 18px !important;
-  font-weight: 500 !important;
-  color: var(--np-text-secondary) !important;
-  margin-bottom: 16px !important;
-  background: var(--np-surface) !important;
-  border-left: 4px solid var(--np-accent) !important;
-  padding: 0.5rem 0.75rem !important;
-  border-radius: 0 var(--np-radius-sm) var(--np-radius-sm) 0 !important;
-  border: 1px solid var(--np-border) !important;
-  border-left: 4px solid var(--np-accent) !important;
-}
-[data-testid="stChatMessage"] h2 {
+  margin: 0 !important;
+  padding: 0 !important;
   background: none !important;
   border: none !important;
   border-left: none !important;
+  border-radius: 0 !important;
+}
+h3,
+[data-testid="stMarkdown"] h3,
+[data-testid="stHeadingWithActionElements"] h3 {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--np-text-primary) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: none !important;
+  border: none !important;
+}
+[data-testid="stChatMessage"] h2,
+[data-testid="stChatMessage"] h3 {
+  background: none !important;
+  border: none !important;
 }
 
-/* Карточки блоков: заголовок + контент */
-div[data-testid="stHorizontalBlock"]:has(h2),
-div[data-testid="stHorizontalBlock"]:has([data-testid="stMarkdown"] h2) {
-  border: 1px solid var(--np-border) !important;
-  border-bottom: none !important;
-  border-radius: var(--np-radius) var(--np-radius) 0 0 !important;
-  padding: 0.5rem 1rem 0.75rem !important;
+/* ── Карточки блоков (border=True контейнер) ────────────── */
+[data-testid="stVerticalBlockBorderWrapper"] {
   background: var(--np-surface) !important;
+  border: 1.5px solid var(--np-border) !important;
+  border-radius: var(--np-radius) !important;
+  padding: 0 !important;
+  margin-bottom: 16px !important;
   box-shadow: var(--np-shadow-sm) !important;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease !important;
+  overflow: hidden !important;
 }
-div[data-testid="stHorizontalBlock"]:has(h2) + div[data-testid="stVerticalBlock"],
-div[data-testid="stHorizontalBlock"]:has([data-testid="stMarkdown"] h2) + div[data-testid="stVerticalBlock"] {
-  border: 1px solid var(--np-border) !important;
-  border-radius: 0 0 var(--np-radius) var(--np-radius) !important;
-  padding: 0.75rem 1rem 1rem !important;
-  margin-bottom: 1rem !important;
-  background: var(--np-surface) !important;
-  box-shadow: var(--np-shadow-sm) !important;
-  transition: box-shadow 0.2s !important;
-}
-div[data-testid="stHorizontalBlock"]:has(h2) + div[data-testid="stVerticalBlock"]:hover {
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+  border-color: var(--np-border-hover) !important;
   box-shadow: var(--np-shadow-hover) !important;
 }
 
-/* Прогресс-бар Streamlit */
-[data-testid="stProgress"] > div > div {
-  background: var(--np-accent) !important;
-  border-radius: 10px !important;
-}
-[data-testid="stProgress"] > div {
-  background: var(--np-border) !important;
-  border-radius: 10px !important;
+/* Внутренний отступ карточки */
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+  padding: 18px 22px !important;
 }
 
-/* Таблицы / DataFrame */
-[data-testid="stDataFrame"] {
-  border-radius: var(--np-radius-sm) !important;
-  overflow: hidden !important;
-  border: 1px solid var(--np-border) !important;
-}
-[data-testid="stDataFrame"] table {
-  border-collapse: collapse !important;
-}
-[data-testid="stDataFrame"] th {
-  text-align: left !important;
-  font-weight: 500 !important;
-  color: var(--np-text-secondary) !important;
-  padding: 12px 10px !important;
-  border-bottom: 2px solid var(--np-border) !important;
-  background: #f8fafc !important;
-}
-[data-testid="stDataFrame"] td {
-  padding: 10px !important;
+/* Разделительная линия под заголовком карточки */
+[data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"]:first-child {
+  padding-bottom: 10px !important;
   border-bottom: 1px solid var(--np-border) !important;
-  color: var(--np-text-primary) !important;
-  white-space: normal !important;
-  word-wrap: break-word !important;
-  word-break: break-word !important;
-  overflow-wrap: break-word !important;
-  max-width: 280px !important;
-}
-[data-testid="stDataFrame"] tbody tr:nth-child(even) td {
-  background: #f8fafc !important;
-}
-[data-testid="stDataFrame"] tr:hover td {
-  background: #f1f5f9 !important;
+  margin-bottom: 14px !important;
 }
 
-/* Метрики */
-[data-testid="stMetric"] {
-  background: var(--np-surface) !important;
-  border: 1px solid var(--np-border) !important;
-  border-radius: var(--np-radius-sm) !important;
-  padding: 16px !important;
-  box-shadow: var(--np-shadow-sm) !important;
-}
-[data-testid="stMetric"] label {
-  color: var(--np-text-tertiary) !important;
+/* ── Шестерёнка ─────────────────────────────────────────── */
+[data-testid="stVerticalBlockBorderWrapper"] .stButton > button[title="Настройки блока"],
+[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"][title="Настройки блока"] {
+  width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
   font-size: 14px !important;
-}
-[data-testid="stMetric"] [data-testid="stMetricValue"] {
-  font-size: 22px !important;
-  font-weight: 600 !important;
-  color: var(--np-text-primary) !important;
+  background: var(--np-surface-2) !important;
+  border: 1px solid var(--np-border) !important;
+  color: var(--np-text-secondary) !important;
 }
 
-/* Кнопки */
+/* ── Кнопки ─────────────────────────────────────────────── */
 .stButton > button {
-  border-radius: 30px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
-  border: 1px solid var(--np-border) !important;
-  transition: background 0.2s, box-shadow 0.2s !important;
+  font-family: 'Inter', sans-serif !important;
+  border: 1.5px solid var(--np-border) !important;
+  background: var(--np-surface) !important;
+  color: var(--np-text-primary) !important;
+  transition: background 0.18s, border-color 0.18s, box-shadow 0.18s !important;
+  padding: 0.35rem 0.9rem !important;
 }
 .stButton > button:hover {
-  box-shadow: var(--np-shadow-sm) !important;
+  border-color: var(--np-accent) !important;
+  color: var(--np-accent) !important;
+  background: var(--np-accent-light) !important;
+  box-shadow: var(--np-shadow-xs) !important;
 }
 .stButton > button[kind="primary"] {
   background: var(--np-accent) !important;
   border-color: var(--np-accent) !important;
-  color: white !important;
+  color: #ffffff !important;
 }
 .stButton > button[kind="primary"]:hover {
-  background: #2563eb !important;
+  background: var(--np-accent-dark) !important;
+  border-color: var(--np-accent-dark) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(59,130,246,0.35) !important;
 }
 
-/* Поля ввода */
-.stTextInput > div > div input,
-.stNumberInput > div > div input,
-.stTextArea > div > div textarea {
+/* ── Метрики ─────────────────────────────────────────────── */
+[data-testid="stMetric"] {
+  background: var(--np-surface-2) !important;
+  border: 1.5px solid var(--np-border) !important;
   border-radius: var(--np-radius-sm) !important;
-  border: 1px solid var(--np-border) !important;
+  padding: 14px 16px !important;
+  box-shadow: var(--np-shadow-xs) !important;
+}
+[data-testid="stMetric"] label {
+  color: var(--np-text-muted) !important;
+  font-size: 12px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  font-weight: 500 !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  font-size: 24px !important;
+  font-weight: 700 !important;
+  color: var(--np-text-primary) !important;
+  letter-spacing: -0.5px !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+  font-size: 12px !important;
 }
 
-/* Разделитель */
-hr {
-  border-color: var(--np-border) !important;
-  margin: 1rem 0 !important;
-}
-
-/* Инфо / предупреждение / успех */
-[data-testid="stAlert"] {
-  border-radius: var(--np-radius-sm) !important;
-  border: 1px solid var(--np-border) !important;
-}
-
-/* Календарь (таблица) */
-.cal-table {
-  border-collapse: collapse !important;
-  font-size: 0.9rem !important;
+/* ── DataFrame / Таблицы ─────────────────────────────────── */
+[data-testid="stDataFrame"],
+[data-testid="stDataFrameResizable"] {
   border-radius: var(--np-radius-sm) !important;
   overflow: hidden !important;
+  border: 1.5px solid var(--np-border) !important;
+  box-shadow: var(--np-shadow-xs) !important;
 }
-.cal-table td, .cal-table th {
-  border: 1px solid var(--np-border) !important;
-  padding: 0.35rem 0.5rem !important;
-  text-align: center !important;
+[data-testid="stDataFrame"] th {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--np-text-secondary) !important;
+  background: var(--np-surface-2) !important;
+  padding: 10px 12px !important;
+  border-bottom: 2px solid var(--np-border) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.4px !important;
 }
-.cal-empty {
-  background: #f8fafc !important;
+[data-testid="stDataFrame"] td {
+  font-size: 13px !important;
+  padding: 9px 12px !important;
+  border-bottom: 1px solid var(--np-border) !important;
+  color: var(--np-text-primary) !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  max-width: 280px !important;
 }
-.cal-day {
-  border-radius: 4px !important;
+[data-testid="stDataFrame"] tbody tr:nth-child(even) td {
+  background: var(--np-surface-2) !important;
+}
+[data-testid="stDataFrame"] tr:hover td {
+  background: var(--np-accent-light) !important;
 }
 
-/* Пустые состояния */
-.np-empty-state {
-  background: #f8fafc !important;
-  border-radius: 16px !important;
-  padding: 32px !important;
+/* ── Прогресс-бар ────────────────────────────────────────── */
+[data-testid="stProgress"] > div {
+  background: var(--np-border) !important;
+  border-radius: 10px !important;
+  height: 6px !important;
+}
+[data-testid="stProgress"] > div > div {
+  background: linear-gradient(90deg, var(--np-accent), #60a5fa) !important;
+  border-radius: 10px !important;
+}
+
+/* ── Поля ввода ──────────────────────────────────────────── */
+.stTextInput > div > div input,
+.stNumberInput > div > div input,
+.stTextArea > div > div textarea,
+.stSelectbox > div > div {
+  border-radius: var(--np-radius-xs) !important;
+  border: 1.5px solid var(--np-border) !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  transition: border-color 0.18s !important;
+}
+.stTextInput > div > div input:focus,
+.stNumberInput > div > div input:focus,
+.stTextArea > div > div textarea:focus {
+  border-color: var(--np-accent) !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
+}
+
+/* ── Expander (Настройки блока, Расположение блоков) ─────── */
+[data-testid="stExpander"] {
+  border: 1.5px solid var(--np-border) !important;
+  border-radius: var(--np-radius-sm) !important;
+  overflow: hidden !important;
+  background: var(--np-surface-2) !important;
+  margin-bottom: 8px !important;
+}
+[data-testid="stExpander"] summary {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--np-text-secondary) !important;
+  padding: 10px 14px !important;
+  background: var(--np-surface-2) !important;
+}
+
+/* ── Алерты ──────────────────────────────────────────────── */
+[data-testid="stAlert"] {
+  border-radius: var(--np-radius-xs) !important;
+  font-size: 13px !important;
+}
+
+/* ── Разделитель ─────────────────────────────────────────── */
+hr {
+  border: none !important;
+  border-top: 1px solid var(--np-border) !important;
+  margin: 12px 0 !important;
+}
+
+/* ── Caption / small text ────────────────────────────────── */
+[data-testid="stCaptionContainer"] {
+  font-size: 12px !important;
+  color: var(--np-text-muted) !important;
+}
+
+/* ── Календарь-таблица ───────────────────────────────────── */
+.cal-table {
+  border-collapse: collapse !important;
+  font-size: 13px !important;
+  border-radius: var(--np-radius-sm) !important;
+  overflow: hidden !important;
+  box-shadow: var(--np-shadow-xs) !important;
+}
+.cal-table td,
+.cal-table th {
+  border: 1px solid var(--np-border) !important;
+  padding: 6px 8px !important;
   text-align: center !important;
-  color: #64748b !important;
-  border: 1px solid #e2e8f0 !important;
+}
+.cal-table th {
+  background: var(--np-surface-2) !important;
+  font-weight: 600 !important;
+  color: var(--np-text-secondary) !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+.cal-empty { background: var(--np-surface-2) !important; }
+.cal-day   { border-radius: 4px !important; }
+
+/* ── np-cal-table (мини-сетка Нейропульс) ───────────────── */
+.np-cal-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+  max-width: 420px;
+  border-radius: var(--np-radius-sm);
+  overflow: hidden;
+  box-shadow: var(--np-shadow-xs);
+}
+.np-cal-table td,
+.np-cal-table th {
+  border: 1px solid var(--np-border);
+  padding: 6px 8px;
+  text-align: center;
+}
+.np-cal-table th {
+  background: var(--np-surface-2);
+  font-weight: 600;
+  color: var(--np-text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.np-cal-empty { background: var(--np-surface-2); }
+.np-cal-day   { border-radius: 4px; cursor: default; }
+
+/* ── Пустые состояния ────────────────────────────────────── */
+.np-empty-state {
+  background: var(--np-surface-2);
+  border-radius: var(--np-radius-sm);
+  padding: 32px;
+  text-align: center;
+  color: var(--np-text-muted);
+  border: 1.5px dashed var(--np-border);
 }
 .np-empty-icon {
-  font-size: 48px !important;
-  display: block !important;
-  margin-bottom: 12px !important;
-}
-.np-empty-state p {
-  margin: 0 !important;
-  font-size: 0.95rem !important;
+  font-size: 40px;
+  display: block;
+  margin-bottom: 10px;
 }
 
-/* Статус-кружки и прогресс по этапам */
+/* ── Статус-кружки ───────────────────────────────────────── */
 .np-status-dot {
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  margin-right: 8px;
+  margin-right: 6px;
   vertical-align: middle;
 }
 .np-status-dot.np-not_started { background: #cbd5e1; }
-.np-status-dot.np-in_progress { background: #3b82f6; }
-.np-status-dot.np-done { background: #22c55e; }
-.np-status-dot.np-overdue { background: #ef4444; }
-.np-stages-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-.np-stages-table th { text-align: left; font-weight: 500; color: #475569; padding: 10px 8px; border-bottom: 2px solid #e2e8f0; background: #f8fafc; }
-.np-stages-table td { padding: 10px 8px; border-bottom: 1px solid #e2e8f0; }
-.np-stages-table tr:hover td { background: #f8fafc; }
-.np-progress-cell { min-width: 100px; }
-.np-progress-bar-inline { height: 6px; background: #e2e8f0; border-radius: 10px; overflow: hidden; }
-.np-progress-fill-inline { height: 100%; background: #3b82f6; border-radius: 10px; }
+.np-status-dot.np-in_progress { background: var(--np-accent); }
+.np-status-dot.np-done        { background: var(--np-success); }
+.np-status-dot.np-overdue     { background: var(--np-danger); }
 
-/* Карточки ККТ (milestone) */
-.np-milestone-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
-.np-milestone-card { background: #fff; border-radius: 16px; padding: 16px; display: flex; gap: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
-.np-milestone-icon { font-size: 24px; flex-shrink: 0; }
-.np-milestone-title { font-weight: 500; color: #0f172a; margin-bottom: 4px; }
-.np-milestone-date { font-size: 14px; color: #64748b; }
-.np-milestone-status { font-size: 13px; margin-top: 8px; }
-.np-milestone-status.np-done { color: #22c55e; }
-.np-milestone-status.np-in_progress { color: #3b82f6; }
-.np-milestone-status.np-overdue { color: #ef4444; }
-.np-milestone-status.np-not_started { color: #64748b; }
+/* ── Таблица этапов ──────────────────────────────────────── */
+.np-stages-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  border-radius: var(--np-radius-sm);
+  overflow: hidden;
+}
+.np-stages-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--np-text-secondary);
+  padding: 10px 10px;
+  border-bottom: 2px solid var(--np-border);
+  background: var(--np-surface-2);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.np-stages-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--np-border);
+  color: var(--np-text-primary);
+}
+.np-stages-table tr:hover td { background: var(--np-accent-light); }
+.np-progress-cell     { min-width: 90px; }
+.np-progress-bar-inline { height: 5px; background: var(--np-border); border-radius: 10px; overflow: hidden; }
+.np-progress-fill-inline { height: 100%; background: linear-gradient(90deg, var(--np-accent), #60a5fa); border-radius: 10px; }
 
-/* Круговой прогресс (информационная активность) */
-.np-circle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 20px; }
-.np-circle-card { background: #fff; border-radius: 20px; padding: 20px; text-align: center; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
-.np-circle-ring { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1.1rem; color: #0f172a; position: relative; }
-.np-circle-ring .np-circle-inner { width: 56px; height: 56px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 1rem; box-shadow: 0 0 0 2px #e2e8f0; }
-.np-circle-label { font-size: 13px; color: #64748b; margin-bottom: 2px; }
-.np-circle-target { font-size: 12px; color: #94a3b8; }
+/* ── ККТ-карточки (milestone) ────────────────────────────── */
+.np-milestone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.np-milestone-card {
+  background: var(--np-surface);
+  border-radius: var(--np-radius-sm);
+  padding: 16px;
+  display: flex;
+  gap: 12px;
+  border: 1.5px solid var(--np-border);
+  box-shadow: var(--np-shadow-xs);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.np-milestone-card:hover {
+  box-shadow: var(--np-shadow-sm);
+  border-color: var(--np-border-hover);
+}
+.np-milestone-icon  { font-size: 22px; flex-shrink: 0; }
+.np-milestone-title { font-weight: 600; color: var(--np-text-primary); margin-bottom: 3px; font-size: 13px; }
+.np-milestone-date  { font-size: 12px; color: var(--np-text-muted); }
+.np-milestone-status { font-size: 12px; margin-top: 6px; font-weight: 500; }
+.np-milestone-status.np-done        { color: var(--np-success); }
+.np-milestone-status.np-in_progress { color: var(--np-accent); }
+.np-milestone-status.np-overdue     { color: var(--np-danger); }
+.np-milestone-status.np-not_started { color: var(--np-text-muted); }
+
+/* ── Круговой прогресс (Информационная активность) ──────── */
+.np-circle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 14px;
+}
+.np-circle-card {
+  background: var(--np-surface);
+  border-radius: var(--np-radius-sm);
+  padding: 18px 14px;
+  text-align: center;
+  border: 1.5px solid var(--np-border);
+  box-shadow: var(--np-shadow-xs);
+  transition: box-shadow 0.2s;
+}
+.np-circle-card:hover { box-shadow: var(--np-shadow-sm); }
+.np-circle-ring {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--np-text-primary);
+  position: relative;
+}
+.np-circle-ring .np-circle-inner {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--np-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  box-shadow: 0 0 0 2px var(--np-border);
+}
+.np-circle-label  { font-size: 12px; color: var(--np-text-secondary); margin-bottom: 2px; font-weight: 500; }
+.np-circle-target { font-size: 11px; color: var(--np-text-muted); }
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+  background: var(--np-surface) !important;
+  border-right: 1.5px solid var(--np-border) !important;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

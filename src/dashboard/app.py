@@ -89,7 +89,7 @@ def _block_header(title: str, block_id: str) -> bool:
 
 def _block_with_settings(title: str, block_id: str, render_content, render_settings):
     """Рендер блока: заголовок + шестерёнка, при открытых настройках — экспандер, затем контент."""
-    with st.container():
+    with st.container(border=True):
         settings_open = _block_header(title, block_id)
         if settings_open:
             with st.expander("Настройки блока", expanded=True):
