@@ -70,6 +70,12 @@ def _tools_for_vector_store(vector_store_id: str) -> list[dict] | None:
     return [{"type": "file_search", "vector_store_ids": [vector_store_id]}]
 
 
+def _get_calendar_tools() -> list[dict]:
+    """Возвращает инструменты календаря (add_calendar_event) из config.calendar_tools."""
+    config = load_config()
+    return list(config.get("calendar_tools") or [])
+
+
 def ask(question: str, instructions: str | None = None) -> str:
     """
     Отправляет один запрос к модели Yandex AI Studio и возвращает текст ответа.
@@ -177,6 +183,62 @@ def _raise_403_folder_hint(original: BaseException) -> None:
     ) from original
 
 
+def _extract_text_from_response(response: object) -> str | None:
+    """Извлекает текст из ответа API (output_text или output parts)."""
+    text = getattr(response, "output_text", None)
+    if text and str(text).strip():
+        return str(text).strip()
+    output = getattr(response, "output", None)
+    if not output:
+        return None
+    parts_text = []
+    for part in output:
+        if hasattr(part, "content") and part.content:
+            for c in part.content:
+                t = getattr(c, "text", None)
+                if t and str(t).strip():
+                    parts_text.append(str(t).strip())
+        elif getattr(part, "type", None) != "function_call":
+            s = str(part).strip()
+            if s and s != "None":
+                parts_text.append(s)
+    return "\n".join(parts_text) if parts_text else None
+
+
+def _collect_function_calls(response: object) -> list[tuple[str, str, str]]:
+    """
+    Собирает из response.output вызовы функций.
+    Возвращает список (call_id, name, arguments) для каждого item с type == "function_call".
+    """
+    output = getattr(response, "output", None) or []
+    out = []
+    for part in output:
+        if getattr(part, "type", None) != "function_call":
+            continue
+        call_id = getattr(part, "call_id", None) or getattr(part, "id", None)
+        name = getattr(part, "name", None)
+        arguments = getattr(part, "arguments", None)
+        if call_id and name is not None:
+            out.append((str(call_id), str(name), arguments if isinstance(arguments, str) else (arguments or "{}")))
+    return out
+
+
+def _execute_tool(name: str, arguments: str) -> str:
+    """Выполняет инструмент по имени и JSON-аргументам. Возвращает строку результата для API."""
+    import json
+    if name == "add_calendar_event":
+        try:
+            from src.yandex_calendar_client import execute_add_calendar_event_tool
+            args = json.loads(arguments) if arguments else {}
+            return execute_add_calendar_event_tool(args)
+        except json.JSONDecodeError as e:
+            return f"Ошибка разбора аргументов: {e}"
+        except Exception as e:
+            logger.exception("Ошибка выполнения add_calendar_event: %s", e)
+            return f"Ошибка: {e}"
+    return f"Неизвестный инструмент: {name}"
+
+
 def ask_in_conversation(
     conversation_id: str,
     message: str,
@@ -186,30 +248,33 @@ def ask_in_conversation(
     Отправляет сообщение в существующую сессию (conversation).
     Модель видит всю историю диалога в этой сессии.
     При 404 (сессия не найдена) создаёт новую сессию, сохраняет её и повторяет запрос один раз.
+    При ответе с tool_calls (function_call) выполняет инструменты и отправляет результаты в API,
+    повторяя запрос до финального текстового ответа.
     """
     client, cfg = get_client()
-    # В Conversations API с agent_id в URI ai.api возвращал пустой output; rest-assistant даёт 400 Failed to get model. Используем URI модели + instructions + tools на ai.api.
     model_spec = cfg["agent_id"] or cfg["model"]
     if cfg["agent_id"]:
         model_spec = cfg["model"] or "deepseek-v32/latest"
     model_uri = f"gpt://{cfg['folder_id']}/{model_spec}"
     instr = instructions if instructions is not None else cfg["instructions"]
-    tools = _tools_for_vector_store(cfg.get("vector_store_id") or "")
+    tools_list: list[dict] = list(_tools_for_vector_store(cfg.get("vector_store_id") or "") or [])
+    tools_list.extend(_get_calendar_tools())
 
-    def _do_request(conv_id: str):
+    def _do_request(conv_id: str, input_data: str | list):
         kwargs = {
             "model": model_uri,
             "conversation": conv_id,
-            "input": message,
+            "input": input_data,
             "instructions": instr or "",
             "max_output_tokens": 2000,
         }
-        if tools:
-            kwargs["tools"] = tools
+        if tools_list:
+            kwargs["tools"] = tools_list
         return client.responses.create(**kwargs)
 
+    conv_id = conversation_id
     try:
-        response = _do_request(conversation_id)
+        response = _do_request(conv_id, message)
     except Exception as e:
         if _is_forbidden_folder(e):
             _raise_403_folder_hint(e)
@@ -217,37 +282,37 @@ def ask_in_conversation(
             logger.warning("Сессия %s не найдена (404), создаём новую.", conversation_id[:16])
             new_id = create_conversation()
             save_session_id(new_id)
-            response = _do_request(new_id)
+            conv_id = new_id
+            response = _do_request(conv_id, message)
         else:
             raise
 
-    err = getattr(response, "error", None)
-    if err is not None and getattr(response, "status", None) == "failed":
-        msg = getattr(err, "message", None) or str(err)
-        code = getattr(err, "code", None) or ""
-        logger.warning("Ответ API с ошибкой: status=failed, error=%s", msg)
-        return f"Ошибка API ({code}): {msg}"
+    max_tool_rounds = 5
+    for _ in range(max_tool_rounds):
+        err = getattr(response, "error", None)
+        if err is not None and getattr(response, "status", None) == "failed":
+            msg = getattr(err, "message", None) or str(err)
+            code = getattr(err, "code", None) or ""
+            logger.warning("Ответ API с ошибкой: status=failed, error=%s", msg)
+            return f"Ошибка API ({code}): {msg}"
 
-    text = getattr(response, "output_text", None)
-    if not (text and str(text).strip()):
-        text = None
-    if text is None and getattr(response, "output", None):
-        parts_text = []
-        for part in response.output:
-            if hasattr(part, "content") and part.content:
-                for c in part.content:
-                    t = getattr(c, "text", None)
-                    if t and str(t).strip():
-                        parts_text.append(str(t).strip())
-            else:
-                s = str(part).strip()
-                if s and s != "None":
-                    parts_text.append(s)
-        if parts_text:
-            text = "\n".join(parts_text)
-    if text is None:
-        text = str(response).strip() if getattr(response, "__str__", None) else ""
-    if not (text and str(text).strip()):
+        function_calls = _collect_function_calls(response)
+        if not function_calls:
+            break
+
+        tool_outputs = []
+        for call_id, name, arguments in function_calls:
+            result = _execute_tool(name, arguments)
+            tool_outputs.append({"type": "function_call_output", "call_id": call_id, "output": result})
+            logger.info("Выполнен инструмент %s, call_id=%s", name, call_id[:16] if call_id else "")
+
+        response = _do_request(conv_id, tool_outputs)
+
+    text = _extract_text_from_response(response)
+    if text:
+        return text
+    text = str(response).strip() if getattr(response, "__str__", None) else ""
+    if not (text and text.strip()):
         logger.warning("Ответ API пустой. model_spec=%s, output_len=%s", model_spec, len(getattr(response, "output", None) or []))
         return (
             "API вернул пустой ответ. Возможные причины: "
@@ -255,7 +320,7 @@ def ask_in_conversation(
             "ограничения модели или таймаут. Проверьте логи дашборда или выполните в терминале: "
             "`python -m src.yandex_ai_client \"Тест\"` — если там будет ошибка, её текст подскажет причину."
         )
-    return text
+    return text.strip()
 
 
 def save_session_id(conversation_id: str) -> None:

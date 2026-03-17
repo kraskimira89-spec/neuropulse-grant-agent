@@ -1,0 +1,195 @@
+/* НейроПульс — тема дашборда: спокойные медицинские тона, читаемость, карточки */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+:root {
+  --np-bg: #f8fafc;
+  --np-surface: #ffffff;
+  --np-text-primary: #0f172a;
+  --np-text-secondary: #475569;
+  --np-text-tertiary: #64748b;
+  --np-border: #e2e8f0;
+  --np-accent: #3b82f6;
+  --np-accent-light: #dbeafe;
+  --np-success: #22c55e;
+  --np-warning: #f59e0b;
+  --np-danger: #ef4444;
+  --np-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.02);
+  --np-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.05);
+  --np-radius: 20px;
+  --np-radius-sm: 16px;
+}
+
+/* Фон страницы и типографика */
+.stApp, [data-testid="stAppViewContainer"] {
+  background: var(--np-bg) !important;
+}
+.main .block-container {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  color: var(--np-text-primary);
+  max-width: 1600px;
+  padding: 24px;
+}
+
+/* Заголовки */
+h1, [data-testid="stMarkdown"] h1 {
+  font-size: 28px !important;
+  font-weight: 600 !important;
+  color: var(--np-text-primary) !important;
+  margin-bottom: 8px !important;
+}
+h2, [data-testid="stMarkdown"] h2 {
+  font-size: 18px !important;
+  font-weight: 500 !important;
+  color: var(--np-text-secondary) !important;
+  margin-bottom: 16px !important;
+  background: var(--np-surface) !important;
+  border-left: 4px solid var(--np-accent) !important;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 0 var(--np-radius-sm) var(--np-radius-sm) 0 !important;
+  border: 1px solid var(--np-border) !important;
+  border-left: 4px solid var(--np-accent) !important;
+}
+[data-testid="stChatMessage"] h2 {
+  background: none !important;
+  border: none !important;
+  border-left: none !important;
+}
+
+/* Карточки блоков: заголовок + контент */
+div[data-testid="stHorizontalBlock"]:has(h2),
+div[data-testid="stHorizontalBlock"]:has([data-testid="stMarkdown"] h2) {
+  border: 1px solid var(--np-border) !important;
+  border-bottom: none !important;
+  border-radius: var(--np-radius) var(--np-radius) 0 0 !important;
+  padding: 0.5rem 1rem 0.75rem !important;
+  background: var(--np-surface) !important;
+  box-shadow: var(--np-shadow-sm) !important;
+}
+div[data-testid="stHorizontalBlock"]:has(h2) + div[data-testid="stVerticalBlock"],
+div[data-testid="stHorizontalBlock"]:has([data-testid="stMarkdown"] h2) + div[data-testid="stVerticalBlock"] {
+  border: 1px solid var(--np-border) !important;
+  border-radius: 0 0 var(--np-radius) var(--np-radius) !important;
+  padding: 0.75rem 1rem 1rem !important;
+  margin-bottom: 1rem !important;
+  background: var(--np-surface) !important;
+  box-shadow: var(--np-shadow-sm) !important;
+  transition: box-shadow 0.2s !important;
+}
+div[data-testid="stHorizontalBlock"]:has(h2) + div[data-testid="stVerticalBlock"]:hover {
+  box-shadow: var(--np-shadow-hover) !important;
+}
+
+/* Прогресс-бар Streamlit */
+[data-testid="stProgress"] > div > div {
+  background: var(--np-accent) !important;
+  border-radius: 10px !important;
+}
+[data-testid="stProgress"] > div {
+  background: var(--np-border) !important;
+  border-radius: 10px !important;
+}
+
+/* Таблицы / DataFrame */
+[data-testid="stDataFrame"] {
+  border-radius: var(--np-radius-sm) !important;
+  overflow: hidden !important;
+  border: 1px solid var(--np-border) !important;
+}
+[data-testid="stDataFrame"] table {
+  border-collapse: collapse !important;
+}
+[data-testid="stDataFrame"] th {
+  text-align: left !important;
+  font-weight: 500 !important;
+  color: var(--np-text-secondary) !important;
+  padding: 12px 10px !important;
+  border-bottom: 2px solid var(--np-border) !important;
+  background: #f8fafc !important;
+}
+[data-testid="stDataFrame"] td {
+  padding: 10px !important;
+  border-bottom: 1px solid var(--np-border) !important;
+  color: var(--np-text-primary) !important;
+}
+[data-testid="stDataFrame"] tbody tr:nth-child(even) td {
+  background: #f8fafc !important;
+}
+[data-testid="stDataFrame"] tr:hover td {
+  background: #f1f5f9 !important;
+}
+
+/* Метрики */
+[data-testid="stMetric"] {
+  background: var(--np-surface) !important;
+  border: 1px solid var(--np-border) !important;
+  border-radius: var(--np-radius-sm) !important;
+  padding: 16px !important;
+  box-shadow: var(--np-shadow-sm) !important;
+}
+[data-testid="stMetric"] label {
+  color: var(--np-text-tertiary) !important;
+  font-size: 14px !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  font-size: 22px !important;
+  font-weight: 600 !important;
+  color: var(--np-text-primary) !important;
+}
+
+/* Кнопки */
+.stButton > button {
+  border-radius: 30px !important;
+  font-weight: 500 !important;
+  border: 1px solid var(--np-border) !important;
+  transition: background 0.2s, box-shadow 0.2s !important;
+}
+.stButton > button:hover {
+  box-shadow: var(--np-shadow-sm) !important;
+}
+.stButton > button[kind="primary"] {
+  background: var(--np-accent) !important;
+  border-color: var(--np-accent) !important;
+  color: white !important;
+}
+.stButton > button[kind="primary"]:hover {
+  background: #2563eb !important;
+}
+
+/* Поля ввода */
+.stTextInput > div > div input,
+.stNumberInput > div > div input,
+.stTextArea > div > div textarea {
+  border-radius: var(--np-radius-sm) !important;
+  border: 1px solid var(--np-border) !important;
+}
+
+/* Разделитель */
+hr {
+  border-color: var(--np-border) !important;
+  margin: 1rem 0 !important;
+}
+
+/* Инфо / предупреждение / успех */
+[data-testid="stAlert"] {
+  border-radius: var(--np-radius-sm) !important;
+  border: 1px solid var(--np-border) !important;
+}
+
+/* Календарь (таблица) */
+.cal-table {
+  border-collapse: collapse !important;
+  font-size: 0.9rem !important;
+  border-radius: var(--np-radius-sm) !important;
+  overflow: hidden !important;
+}
+.cal-table td, .cal-table th {
+  border: 1px solid var(--np-border) !important;
+  padding: 0.35rem 0.5rem !important;
+  text-align: center !important;
+}
+.cal-empty {
+  background: #f8fafc !important;
+}
+.cal-day {
+  border-radius: 4px !important;
+}

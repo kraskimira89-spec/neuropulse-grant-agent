@@ -352,9 +352,15 @@ def _content_schedule(block_id: str) -> None:
     events = _load_schedule_events()
     if not events:
         if source == "yandex":
-            st.info("Яндекс Календарь не настроен или за период событий нет. Задайте YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD (пароль приложения Календарь) в .env или в настройках блока.")
+            msg = "Яндекс Календарь не настроен или за период событий нет. Задайте YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в .env или в настройках блока."
         else:
-            st.info("Календарь гранта пуст. Добавьте data/grant_calendar.json или переключите источник на «Яндекс Календарь» в настройках.")
+            msg = "Календарь гранта пуст. Добавьте data/grant_calendar.json или переключите источник на «Яндекс Календарь» в настройках."
+        st.markdown(
+            f'<div class="np-empty-state"><span class="np-empty-icon">📅</span><p>{msg}</p></div>'
+            '<style>.np-empty-state { background: #f8fafc; border-radius: 16px; padding: 32px; text-align: center; color: #64748b; border: 1px solid #e2e8f0; } '
+            '.np-empty-icon { font-size: 48px; display: block; margin-bottom: 12px; } .np-empty-state p { margin: 0; font-size: 0.95rem; }</style>',
+            unsafe_allow_html=True,
+        )
         return
     today = datetime.utcnow().date()
     end = today + timedelta(days=days)
@@ -372,7 +378,12 @@ def _content_schedule(block_id: str) -> None:
             upcoming.append((d, ev.get("title", ""), ev.get("description", ""), ev.get("address", "")))
     upcoming.sort(key=lambda x: x[0])
     if not upcoming:
-        st.caption(f"В ближайшие {days} дн. событий по календарю нет.")
+        st.markdown(
+            f'<div class="np-empty-state"><span class="np-empty-icon">📅</span><p>Нет событий на ближайшие {days} дней</p></div>'
+            '<style>.np-empty-state { background: #f8fafc; border-radius: 16px; padding: 32px; text-align: center; color: #64748b; border: 1px solid #e2e8f0; } '
+            '.np-empty-icon { font-size: 48px; display: block; margin-bottom: 12px; } .np-empty-state p { margin: 0; font-size: 0.95rem; }</style>',
+            unsafe_allow_html=True,
+        )
         return
     if source == "yandex":
         st.caption("Источник: Яндекс Календарь (CalDAV)")
@@ -429,7 +440,12 @@ def _content_reminders(block_id: str) -> None:
         elif days_left == 7:
             reminders_7.append((d, title))
     if not (reminders_7 or reminders_3 or reminders_1 or today_ev or overdue):
-        st.caption("Нет событий в зоне напоминаний (за 7/3/1 дн., сегодня, просрочено). Добавьте события в календарь.")
+        st.markdown(
+            '<div class="np-empty-state"><span class="np-empty-icon">🔔</span><p>Нет событий в зоне напоминаний (за 7/3/1 дн., сегодня, просрочено). Добавьте события в календарь.</p></div>'
+            '<style>.np-empty-state { background: #f8fafc; border-radius: 16px; padding: 32px; text-align: center; color: #64748b; border: 1px solid #e2e8f0; } '
+            '.np-empty-icon { font-size: 48px; display: block; margin-bottom: 12px; } .np-empty-state p { margin: 0; font-size: 0.95rem; }</style>',
+            unsafe_allow_html=True,
+        )
         return
     for d, title, days_over in overdue:
         st.markdown(f"🔴 **Просрочено** ({abs(days_over)} дн.) — {title} (*{d}*)")
@@ -826,6 +842,101 @@ def block_vector_store() -> None:
     _block_with_settings("📚 База знаний (Vector Store)", "vector_store", _content_vs, _settings_vs)
 
 
+# ---------- Блок: Агент Парсер ----------
+PARSER_LAST_RUN_PATH = PROJECT_ROOT / "data" / "parser_last_run.json"
+
+
+def _load_parser_last_run() -> dict | None:
+    if not PARSER_LAST_RUN_PATH.exists():
+        return None
+    try:
+        with open(PARSER_LAST_RUN_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_parser_last_run(result: dict) -> None:
+    PARSER_LAST_RUN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(PARSER_LAST_RUN_PATH, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+
+
+def _settings_parser(block_id: str) -> None:
+    st.markdown("**Как настроить (по шагам)**")
+    st.markdown(
+        "1. **Конфиг** — откройте `config/config.json`, найдите секцию `parser`.\n"
+        "2. **Telegram** — в `telegram_channels` укажите каналы в кавычках через запятую, например: "
+        "`[\"@channel\", \"https://t.me/other\"]`. Если не нужен — оставьте `[]`.\n"
+        "3. **Яндекс.Диск** — в `disk_public_links` укажите ссылки на публичные папки, например: "
+        "`[\"https://disk.yandex.ru/d/xxxxx\"]`. Если не нужен — оставьте `[]`.\n"
+        "4. **Секреты Telegram** — в `config/.env` или `.env` в корне задайте TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE (только если парсите Telegram). Получить: https://my.telegram.org/apps\n"
+        "5. **Vector Store** — в `parser.vector_store_id` укажите ID индекса или оставьте пустым — тогда используется общий из yandex_ai_studio / YANDEX_VECTOR_STORE_ID."
+    )
+
+
+def _content_parser(block_id: str) -> None:
+    try:
+        from src.parser import get_parser_config, run_parser_pipeline
+    except ImportError as e:
+        st.warning(f"Модуль парсера недоступен: {e}")
+        return
+    cfg = get_parser_config()
+    vs_id = (cfg.get("vector_store_id") or "").strip()
+    channels = cfg.get("telegram_channels") or []
+    disk_links = cfg.get("disk_public_links") or []
+    has_tg_creds = bool((cfg.get("telegram_api_id") or "").strip() and (cfg.get("telegram_api_hash") or "").strip())
+
+    st.caption(f"Каналов Telegram: {len(channels)}, ссылок Яндекс.Диск: {len(disk_links)}. Vector Store: {'задан' if vs_id else 'не задан'}.")
+    hints = []
+    if channels and not has_tg_creds:
+        hints.append("Для парсинга Telegram задайте в .env: TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE.")
+    if not channels and not disk_links:
+        hints.append("Добавьте каналы в parser.telegram_channels и/или ссылки в parser.disk_public_links в config/config.json.")
+    if (channels or disk_links) and not vs_id:
+        hints.append("Укажите vector_store_id в parser или YANDEX_VECTOR_STORE_ID в .env — иначе загрузка в индекс не выполнится.")
+    for h in hints:
+        st.warning(h)
+
+    run_key = "parser_run_clicked"
+    if run_key not in st.session_state:
+        st.session_state[run_key] = None
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("📱 Парсинг Telegram", key="btn_parser_tg"):
+            st.session_state[run_key] = ("telegram", True, False)
+            st.rerun()
+    with col2:
+        if st.button("📁 Парсинг Яндекс.Диск", key="btn_parser_disk"):
+            st.session_state[run_key] = ("disk", False, True)
+            st.rerun()
+    with col3:
+        if st.button("🔄 Полный парсинг", key="btn_parser_full"):
+            st.session_state[run_key] = ("full", True, True)
+            st.rerun()
+
+    if st.session_state[run_key]:
+        _mode, run_tg, run_disk = st.session_state[run_key]
+        st.session_state[run_key] = None
+        with st.spinner("Запуск парсера…"):
+            result = run_parser_pipeline(run_telegram=run_tg, run_disk=run_disk)
+        _save_parser_last_run(result)
+        if result.get("ok"):
+            st.success(result.get("details", "Готово."))
+        else:
+            st.error("; ".join(result.get("errors", ["Ошибка"])))
+        st.caption(f"Загружено в индекс: {result.get('files_uploaded', 0)} файлов.")
+
+    last = _load_parser_last_run()
+    if last:
+        st.caption(f"Последний запуск: {last.get('details', '—')}")
+
+
+def block_parser() -> None:
+    _block_with_settings("🔀 Агент Парсер", "parser", _content_parser, _settings_parser)
+
+
 # ---------- Блок: Управление рисками ----------
 def _load_risks() -> list[dict]:
     for path in (RISKS_PATH, RISKS_EXAMPLE):
@@ -1102,10 +1213,12 @@ def _settings_neuropulse_cal(block_id: str) -> None:
     st.session_state["dashboard_neuropulse_min_year"] = min_year
     show_desc = st.checkbox("Показывать описание", value=_get("dashboard_neuropulse_show_desc", True), key=f"cb_neuropulse_desc_{block_id}")
     st.session_state["dashboard_neuropulse_show_desc"] = show_desc
-    st.caption("Показываются все события гранта и ККТ с метками [Грант] / [ККТ]. Виджет — календарь Яндекса. После синхронизации события отображаются в Календарь Нейропульс.")
+    auto_sync = st.checkbox("Синхронизировать автоматически при открытии блока", value=_get("dashboard_neuropulse_auto_sync", True), key=f"cb_neuropulse_auto_sync_{block_id}", help="События гранта и ККТ выгружаются в Календарь Нейропульс при открытии дашборда (без дубликатов).")
+    st.session_state["dashboard_neuropulse_auto_sync"] = auto_sync
+    st.caption("Показываются все события гранта и ККТ с метками [Грант] / [ККТ]. Виджет — календарь Яндекса. После синхронизации события отображаются в сетке календаря.")
     st.divider()
-    st.caption("**Синхронизация с Календарь Нейропульс:** события из grant_calendar.json и ККТ из grant_kkt.json (с 2026 г.) создаются в календаре Нейропульс.")
-    if st.button("Выгрузить события гранта и ККТ в Календарь Нейропульс", key=f"btn_push_cal_{block_id}"):
+    st.caption("**Синхронизация с Календарь Нейропульс:** события из grant_calendar.json и ККТ из grant_kkt.json (с 2026 г.). «Только добавить» — создаёт отсутствующие; «Полная синхронизация» — создаёт недостающие, обновляет изменённые и удаляет из календаря события, которых нет в локальных данных.")
+    if st.button("Только добавить события в календарь", key=f"btn_push_cal_{block_id}"):
         try:
             from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, get_yandex_calendar_config
             cfg = get_yandex_calendar_config()
@@ -1114,20 +1227,45 @@ def _settings_neuropulse_cal(block_id: str) -> None:
                 st.error("Задайте YANDEX_CALENDAR_NEUROPULSE_URL или YANDEX_CALENDAR_URL в config/.env.")
             else:
                 created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=url)
-                st.success(f"Создано событий в Календарь Нейропульс: {created}. Ошибок: {errors}. Обновите виджет календаря или calendar.yandex.ru.")
+                st.success(f"Создано событий: {created}. Ошибок: {errors}. Обновите виджет календаря или calendar.yandex.ru.")
                 st.rerun()
         except Exception as e:
             st.error(f"Ошибка выгрузки: {e}")
+    if st.button("Полная синхронизация (добавить / обновить / удалить по локальным данным)", key=f"btn_full_sync_cal_{block_id}"):
+        try:
+            from src.yandex_calendar_client import sync_grant_and_kkt_with_calendar, get_yandex_calendar_config
+            cfg = get_yandex_calendar_config()
+            url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
+            if not url:
+                st.error("Задайте YANDEX_CALENDAR_NEUROPULSE_URL или YANDEX_CALENDAR_URL в config/.env.")
+            else:
+                created, updated, deleted = sync_grant_and_kkt_with_calendar(calendar_url=url)
+                st.success(f"Создано: {created}, обновлено: {updated}, удалено: {deleted}. Обновите виджет календаря или calendar.yandex.ru.")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Ошибка полной синхронизации: {e}")
 
 
 def _content_neuropulse_cal(block_id: str) -> None:
     try:
-        from src.yandex_calendar_client import get_yandex_calendar_config
+        from src.yandex_calendar_client import get_yandex_calendar_config, push_grant_and_kkt_to_yandex_calendar
     except ImportError:
         st.info("Модуль Яндекс Календаря недоступен.")
         return
     cfg = get_yandex_calendar_config()
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
+    neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
+    can_sync = bool(neuro_url and cfg.get("user") and cfg.get("password"))
+
+    # Автосинхронизация: при первом открытии блока выгружаем события гранта и ККТ в календарь (без дубликатов)
+    if _get("dashboard_neuropulse_auto_sync", True) and can_sync and not st.session_state.get("neuropulse_auto_synced"):
+        try:
+            created, _errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url, skip_existing=True)
+            st.session_state["neuropulse_auto_synced"] = True
+            if created > 0:
+                st.rerun()
+        except Exception:
+            st.session_state["neuropulse_auto_synced"] = True
 
     # Виджет календаря Яндекса (если задан embed URL). allow="microphone 'none'; camera 'none'" — дашборд не использует микрофон и не мешает ему в других вкладках (Chrome, Google Meet).
     if embed_url:
@@ -1141,17 +1279,24 @@ def _content_neuropulse_cal(block_id: str) -> None:
     else:
         st.caption("Чтобы встроить виджет календаря, укажите **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** в config/.env (Экспорт → вставка на сайт в calendar.yandex.ru).")
 
-    # Кнопка синхронизации с Календарь Нейропульс (события и ККТ появятся в виджете календаря выше)
-    st.caption("Чтобы события гранта и ККТ были отмечены в виджете календаря выше, выгрузите их в Яндекс.Календарь «Нейропульс».")
+    # Кнопки ручной синхронизации
+    st.caption("События гранта и ККТ выгружаются в календарь Нейропульс автоматически при открытии блока (если включено в настройках). Дубликаты не создаются.")
     try:
-        from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, get_yandex_calendar_config
+        from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, sync_grant_and_kkt_with_calendar, get_yandex_calendar_config
         cal_cfg = get_yandex_calendar_config()
         neuro_url = (cal_cfg.get("neuropulse_calendar_url") or cal_cfg.get("calendar_url") or "").strip()
         if neuro_url and cal_cfg.get("user") and cal_cfg.get("password"):
-            if st.button("Синхронизировать события гранта и ККТ с Календарь Нейропульс", key="btn_sync_neuropulse_content", type="primary"):
-                created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url)
-                st.success(f"В календарь Нейропульс добавлено событий: {created}. Ошибок: {errors}. Обновите виджет выше или calendar.yandex.ru.")
-                st.rerun()
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Только добавить в календарь", key="btn_sync_neuropulse_content", type="primary"):
+                    created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url)
+                    st.success(f"Добавлено событий: {created}. Ошибок: {errors}. Обновите виджет выше или calendar.yandex.ru.")
+                    st.rerun()
+            with col2:
+                if st.button("Полная синхронизация", key="btn_full_sync_neuropulse_content"):
+                    created, updated, deleted = sync_grant_and_kkt_with_calendar(calendar_url=neuro_url)
+                    st.success(f"Создано: {created}, обновлено: {updated}, удалено: {deleted}. Обновите виджет выше или calendar.yandex.ru.")
+                    st.rerun()
         else:
             st.caption("Задайте YANDEX_CALENDAR_NEUROPULSE_URL (или YANDEX_CALENDAR_URL), YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в .env для синхронизации.")
     except ImportError:
@@ -1345,7 +1490,7 @@ def _load_grant_contacts() -> list[dict]:
 
 
 def _settings_contacts(block_id: str) -> None:
-    st.caption("Контакты читаются из data/grant_contacts.json. Скопируйте data/grant_contacts.example.json в grant_contacts.json и заполните.")
+    st.caption("Редактируемая таблица сохраняется в data/grant_contacts.json. Можно добавить столбец «Телефон», удалять строки и править ячейки.")
 
 
 def _content_contacts(block_id: str) -> None:
@@ -1367,16 +1512,101 @@ def _content_contacts(block_id: str) -> None:
                     st.error(f"Ошибка записи: {e}")
 
     contacts = _load_grant_contacts()
+    has_phone = _get("dashboard_contacts_has_phone", any((c.get("phone") or c.get("телефон") or "").strip() for c in contacts))
     if not contacts:
-        st.info("Добавьте data/grant_contacts.json (скопируйте из grant_contacts.example.json) или загрузите заявку выше.")
-        return
-    rows = []
-    for c in contacts:
-        name = c.get("name") or "—"
-        role = c.get("role") or "—"
-        email = c.get("email") or "—"
-        rows.append({"Имя": name, "Роль": role, "Email": email})
-    st.dataframe(rows, width="stretch", hide_index=True)
+        contacts = [{"name": "", "role": "", "email": ""}]
+    if has_phone:
+        for c in contacts:
+            if "phone" not in c and "телефон" not in c:
+                c["phone"] = ""
+            elif "телефон" in c and "phone" not in c:
+                c["phone"] = c.pop("телефон", "")
+
+    key_contacts = "dashboard_contacts_edit"
+    if key_contacts not in st.session_state:
+        rows = []
+        for c in contacts:
+            r = {"Имя": (c.get("name") or "").strip() or "", "Роль": (c.get("role") or "").strip() or "", "Email": (c.get("email") or "").strip() or "", "Макс.": (c.get("chat_link") or c.get("max_chat") or "").strip() or "", "Удалить": False}
+            if has_phone:
+                r["Телефон"] = (c.get("phone") or "").strip() or ""
+            rows.append(r)
+        st.session_state[key_contacts] = rows
+        st.session_state["dashboard_contacts_has_phone"] = has_phone
+    else:
+        if st.session_state.get("dashboard_contacts_has_phone") != has_phone:
+            rows = st.session_state[key_contacts]
+            if has_phone and rows and "Телефон" not in rows[0]:
+                for r in rows:
+                    r["Телефон"] = ""
+            st.session_state["dashboard_contacts_has_phone"] = has_phone
+        for r in st.session_state[key_contacts]:
+            if "Макс." not in r:
+                r["Макс."] = ""
+    rows = st.session_state[key_contacts]
+
+    col_config = {
+        "Имя": st.column_config.TextColumn("Имя", width="medium"),
+        "Роль": st.column_config.TextColumn("Роль", width="medium"),
+        "Email": st.column_config.TextColumn("Email", width="medium"),
+        "Макс.": st.column_config.LinkColumn("Макс.", width="medium", help="Ссылка на чат с сотрудником (Макс)"),
+        "Удалить": st.column_config.CheckboxColumn("Удалить", width="small", help="Отметьте и нажмите «Сохранить»"),
+    }
+    if has_phone:
+        col_config["Телефон"] = st.column_config.TextColumn("Телефон", width="medium")
+    edited = st.data_editor(
+        rows,
+        use_container_width=True,
+        hide_index=True,
+        column_config=col_config,
+        key="contacts_data_editor",
+        num_rows="dynamic",
+    )
+    st.session_state[key_contacts] = edited
+
+    btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
+    with btn_col1:
+        if not has_phone and st.button("➕ Добавить столбец Телефон", key="contacts_add_phone"):
+            st.session_state["dashboard_contacts_has_phone"] = True
+            ordered = []
+            for r in st.session_state[key_contacts]:
+                ordered.append({"Имя": r.get("Имя", ""), "Роль": r.get("Роль", ""), "Email": r.get("Email", ""), "Макс.": r.get("Макс.", ""), "Телефон": r.get("Телефон", ""), "Удалить": r.get("Удалить", False)})
+            st.session_state[key_contacts] = ordered
+            st.rerun()
+    with btn_col2:
+        if st.button("➕ Добавить строку", key="contacts_add_row"):
+            new_row = {"Имя": "", "Роль": "", "Email": "", "Макс.": "", "Удалить": False}
+            if st.session_state.get("dashboard_contacts_has_phone"):
+                new_row["Телефон"] = ""
+            st.session_state[key_contacts].append(new_row)
+            st.rerun()
+    with btn_col3:
+        if st.button("💾 Сохранить в файл", key="contacts_save", type="primary"):
+            to_save = []
+            for r in edited:
+                if r.get("Удалить"):
+                    continue
+                rec = {"name": (r.get("Имя") or "").strip(), "role": (r.get("Роль") or "").strip(), "email": (r.get("Email") or "").strip()}
+                chat_link = (r.get("Макс.") or "").strip()
+                if chat_link:
+                    rec["chat_link"] = chat_link
+                if st.session_state.get("dashboard_contacts_has_phone"):
+                    rec["phone"] = (r.get("Телефон") or "").strip()
+                to_save.append(rec)
+            try:
+                CONTACTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                with open(CONTACTS_PATH, "w", encoding="utf-8") as f:
+                    json.dump(to_save, f, ensure_ascii=False, indent=2)
+                st.success(f"Сохранено контактов: {len(to_save)} в data/grant_contacts.json.")
+            except Exception as e:
+                st.error(f"Ошибка записи: {e}")
+    with btn_col4:
+        if st.button("🔄 Сбросить из файла", key="contacts_reset"):
+            if key_contacts in st.session_state:
+                del st.session_state[key_contacts]
+            st.session_state["dashboard_contacts_has_phone"] = any(
+                (c.get("phone") or c.get("телефон") or "").strip() for c in _load_grant_contacts()
+            )
+            st.rerun()
 
 
 def block_contacts() -> None:
@@ -1391,14 +1621,43 @@ def _settings_grant_header(block_id: str) -> None:
 def _content_grant_header(block_id: str) -> None:
     data = _load_grant_dashboard_data()
     h = data.get("header") or {}
-    title = h.get("title") or "НейроПульс"
-    date_start = h.get("date_start") or "—"
-    date_end = h.get("date_end") or "—"
-    stage = h.get("current_stage") or "—"
-    responsible = h.get("responsible") or "—"
-    updated = h.get("updated_at") or "—"
-    st.markdown(f"**{title}**")
-    st.caption(f"Сроки: {date_start} — {date_end}  |  Этап: {stage}  |  Ответственный: {responsible}  |  Обновлено: {updated}")
+    title = (h.get("title") or "НейроПульс").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    date_start = (h.get("date_start") or "—").replace("<", "&lt;")
+    date_end = (h.get("date_end") or "—").replace("<", "&lt;")
+    stage = (h.get("current_stage") or "—").replace("<", "&lt;")
+    responsible = (h.get("responsible") or "—").replace("<", "&lt;")
+    updated = (h.get("updated_at") or "—").replace("<", "&lt;")
+    stats_html = f"""
+    <div class="np-stats-grid">
+      <div class="np-stat-card">
+        <span class="np-stat-label">Сроки</span>
+        <span class="np-stat-value">{date_start} – {date_end}</span>
+      </div>
+      <div class="np-stat-card">
+        <span class="np-stat-label">Этап</span>
+        <span class="np-stat-value">{stage}</span>
+        <span class="np-stat-badge">текущий</span>
+      </div>
+      <div class="np-stat-card">
+        <span class="np-stat-label">Обновлено</span>
+        <span class="np-stat-value">{updated}</span>
+      </div>
+      <div class="np-stat-card">
+        <span class="np-stat-label">Ответственный</span>
+        <span class="np-stat-value">{responsible}</span>
+      </div>
+    </div>
+    <p class="np-grant-title">{title}</p>
+    <style>
+    .np-stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 12px; }}
+    .np-stat-card {{ background: #fff; border-radius: 20px; padding: 16px 20px; display: flex; flex-direction: column; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }}
+    .np-stat-label {{ font-size: 14px; color: #64748b; margin-bottom: 4px; }}
+    .np-stat-value {{ font-size: 16px; font-weight: 600; color: #0f172a; }}
+    .np-stat-badge {{ font-size: 12px; background: #e0f2fe; color: #0369a1; padding: 2px 10px; border-radius: 30px; align-self: flex-start; margin-top: 8px; }}
+    .np-grant-title {{ font-weight: 600; color: #0f172a; margin: 0; font-size: 1.05rem; }}
+    </style>
+    """
+    st.markdown(stats_html, unsafe_allow_html=True)
 
 
 def block_grant_header() -> None:
@@ -1447,10 +1706,23 @@ def _content_budget(block_id: str) -> None:
     if not items and not total_plan:
         st.info("Добавьте бюджет в data/grant_project_dashboard.json (секция budget).")
         return
-    st.markdown(f"**Бюджет:** план {total_plan:,.0f} руб.  |  факт {total_fact:,.0f} руб.")
     pct = (total_fact / total_plan * 100) if total_plan else 0
-    st.progress(min(1.0, total_fact / total_plan) if total_plan else 0)
-    st.caption(f"Освоение: {pct:.1f}%")
+    pct_clamped = min(100, pct)
+    plan_fmt = f"{total_plan:,.0f}".replace(",", " ")
+    fact_fmt = f"{total_fact:,.0f}".replace(",", " ")
+    st.markdown(
+        f'<div class="np-budget-overview">'
+        f'<div class="np-budget-total"><span>Освоено: {fact_fmt} / {plan_fmt} руб.</span>'
+        f'<div class="np-progress-bar"><div class="np-progress-fill" style="width:{pct_clamped}%"></div></div>'
+        f'<span class="np-budget-pct">Освоение: {pct:.1f}%</span></div></div>'
+        '<style>.np-budget-overview { margin-bottom: 12px; } '
+        '.np-budget-total { display: flex; flex-direction: column; gap: 8px; } '
+        '.np-budget-total > span:first-child { font-weight: 500; color: #0f172a; } '
+        '.np-progress-bar { width: 100%; height: 8px; background: #e2e8f0; border-radius: 10px; overflow: hidden; } '
+        '.np-progress-fill { height: 100%; background: #3b82f6; border-radius: 10px; transition: width 0.3s; } '
+        '.np-budget-pct { font-size: 14px; color: #64748b; }</style>',
+        unsafe_allow_html=True,
+    )
     rows = []
     for it in items:
         plan = it.get("plan", 0)
@@ -1475,6 +1747,28 @@ def _content_indicators(block_id: str) -> None:
     if not indicators:
         st.info("Добавьте показатели в data/grant_project_dashboard.json → indicators.")
         return
+    # Первые 3 показателя — крупные KPI-карточки
+    kpi_items = indicators[:3]
+    kpi_html_parts = []
+    for ind in kpi_items:
+        target = ind.get("target", 0)
+        fact = ind.get("fact", 0)
+        suffix = (ind.get("suffix") or "")
+        name = (ind.get("name") or "").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        kpi_html_parts.append(
+            f'<div class="np-kpi-card"><div class="np-kpi-value">{fact}{suffix}</div>'
+            f'<div class="np-kpi-label">{name}</div><div class="np-kpi-target">цель {target}{suffix}</div></div>'
+        )
+    if kpi_html_parts:
+        st.markdown(
+            '<div class="np-kpi-grid">' + "".join(kpi_html_parts) + '</div>'
+            '<style>.np-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 16px; } '
+            '.np-kpi-card { background: #fff; border-radius: 20px; padding: 24px; text-align: center; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.02); } '
+            '.np-kpi-value { font-size: 32px; font-weight: 700; color: #0f172a; line-height: 1; } '
+            '.np-kpi-label { font-size: 14px; color: #64748b; margin: 8px 0 4px; } '
+            '.np-kpi-target { font-size: 13px; color: #94a3b8; }</style>',
+            unsafe_allow_html=True,
+        )
     rows = []
     for ind in indicators:
         target = ind.get("target", 0)
@@ -1712,6 +2006,36 @@ def block_chat() -> None:
                 st.session_state.dashboard_messages.append({"role": "assistant", "content": text})
         st.rerun()
 
+    with st.expander("📅 Добавить событие в календарь Нейропульс", expanded=False):
+        try:
+            from src.yandex_calendar_client import add_event_to_neuropulse_calendar, get_yandex_calendar_config
+            cfg = get_yandex_calendar_config()
+            if (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url")) and cfg.get("user") and cfg.get("password"):
+                ev_date = st.date_input("Дата", value=datetime.utcnow().date(), key="add_cal_ev_date")
+                ev_title = st.text_input("Название", placeholder="Например: Встреча с партнёром", key="add_cal_ev_title")
+                ev_desc = st.text_area("Описание", placeholder="Опционально", key="add_cal_ev_desc", height=60)
+                ev_addr = st.text_input("Место / адрес", placeholder="Опционально", key="add_cal_ev_addr")
+                save_to_json = st.checkbox("Добавить в grant_calendar.json", value=True, key="add_cal_ev_save_json")
+                if st.button("Создать событие в календаре", key="add_cal_ev_btn"):
+                    if not (ev_title or "").strip():
+                        st.warning("Укажите название события.")
+                    else:
+                        ok, msg = add_event_to_neuropulse_calendar(
+                            title=(ev_title or "").strip(),
+                            start_date=ev_date,
+                            description=(ev_desc or "").strip(),
+                            address=(ev_addr or "").strip(),
+                            save_to_json=save_to_json,
+                        )
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+            else:
+                st.caption("Задайте YANDEX_CALENDAR_NEUROPULSE_URL (или YANDEX_CALENDAR_URL), YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в .env.")
+        except ImportError:
+            st.caption("Модуль Яндекс Календаря недоступен.")
+
 
 def block_chat_and_tools() -> None:
     """Диалог с агентом и быстрые действия в одной колонке (2:1)."""
@@ -1729,7 +2053,7 @@ DEFAULT_LAYOUT_LEFT = [
 ]
 DEFAULT_LAYOUT_RIGHT = [
     "neuropulse_calendar", "chat_and_tools", "contacts", "notifications",
-    "communications", "documents_archive", "links", "vector_store",
+    "communications", "documents_archive", "links", "vector_store", "parser",
 ]
 
 
@@ -1757,6 +2081,7 @@ def _get_block_registry() -> dict:
         "documents_archive": ("Файловый архив", block_documents_archive),
         "links": ("Ссылки", block_links),
         "vector_store": ("Vector Store", block_vector_store),
+        "parser": ("🔀 Агент Парсер", block_parser),
     }
 
 
@@ -1855,39 +2180,31 @@ def _render_layout_editor() -> None:
             st.rerun()
 
 
+def _inject_theme_css() -> None:
+    """Подключает тему НейроПульс: neuropulse_theme.css + шрифт Inter."""
+    theme_path = PROJECT_ROOT / "src" / "dashboard" / "neuropulse_theme.css"
+    if theme_path.exists():
+        try:
+            css = theme_path.read_text(encoding="utf-8")
+            st.markdown(f"<style>\n{css}\n</style>", unsafe_allow_html=True)
+        except Exception as e:
+            logger.debug("Не удалось загрузить тему дашборда: %s", e)
+    else:
+        st.markdown(
+            "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
+            "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
+            "<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">",
+            unsafe_allow_html=True,
+        )
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Дашборд — Грантовый контролёр НейроПульс",
         page_icon="📋",
         layout="wide",
     )
-    # Стили: карточки блоков и выделение заголовков
-    st.markdown(
-        """
-        <style>
-        /* Карточки блоков: блоки, в которых есть подзаголовок h2 */
-        div[data-testid="stVerticalBlock"]:has(> div > h2) {
-            border: 1px solid #e0e4e8;
-            border-radius: 12px;
-            padding: 1rem 1.25rem;
-            margin-bottom: 0.75rem;
-            background: #ffffff;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }
-        /* Заголовки блоков (h2) — лёгкий цвет */
-        div[data-testid="stVerticalBlock"] h2 {
-            background: linear-gradient(135deg, #e8eaf6 0%, #f5f5f5 100%);
-            color: #1a237e;
-            border-left: 4px solid #3f51b5;
-            padding: 0.5rem 0.75rem;
-            border-radius: 0 8px 8px 0;
-            margin: -0.25rem 0 0.5rem 0;
-            font-weight: 600;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    _inject_theme_css()
     # Автосохранение Паспорт каждые 15 минут
     _passport_save_if_due(st.session_state.get("dashboard_messages", []))
     # Подтверждение после перезапуска (диалог с агентом не трогаем — он в session_state и сохраняется при rerun)
