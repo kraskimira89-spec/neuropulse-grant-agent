@@ -102,7 +102,26 @@ def _inject_block_palette_css() -> None:
             f' border-color: {hdr_bg} !important;'
             f'}}'
         )
-    css = "\n".join(rules)
+    # Выравнивание заголовочной строки (title + arrows + gear) по вертикальному центру
+    header_align_css = """
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock,
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] {
+  align-items: center !important;
+}
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock > [data-testid="stColumn"],
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+  justify-content: center !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h2,
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h3 {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.3 !important;
+}
+"""
+    css = "\n".join(rules) + header_align_css
     st.markdown(f'<style id="np-block-palette">\n{css}\n</style>', unsafe_allow_html=True)
 
 
@@ -2625,7 +2644,6 @@ def main() -> None:
             if bid in hidden_blocks:
                 continue
             st.session_state["dashboard_current_block"] = {"bid": bid, "side": "left", "index": i, "total": len(left_ids)}
-            _block_header_with_arrows(registry[bid][0], bid, "left", i, len(left_ids), left_ids, right_ids)
             registry[bid][1]()
             if i < len(left_ids) - 1:
                 st.divider()
@@ -2637,7 +2655,6 @@ def main() -> None:
             if bid in hidden_blocks:
                 continue
             st.session_state["dashboard_current_block"] = {"bid": bid, "side": "right", "index": i, "total": len(right_ids)}
-            _block_header_with_arrows(registry[bid][0], bid, "right", i, len(right_ids), left_ids, right_ids)
             registry[bid][1]()
             if i < len(right_ids) - 1:
                 st.divider()

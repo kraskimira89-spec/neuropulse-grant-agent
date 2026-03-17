@@ -98,6 +98,24 @@ h3,
   box-shadow: var(--np-shadow-hover) !important;
 }
 
+/* Вертикальное выравнивание строки заголовка (название + стрелки + шестерёнка) */
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock,
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] {
+  align-items: center !important;
+}
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock > [data-testid="stColumn"],
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+  justify-content: center !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h2,
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h3 {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.3 !important;
+}
+
 /* Разделительная линия под заголовком карточки */
 [data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stVerticalBlock"]:first-of-type {
   padding-bottom: 10px !important;

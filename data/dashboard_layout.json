@@ -20,9 +20,10 @@
     "communications",
     "documents_archive",
     "links",
-    "vector_store",
     "parser",
-    "reminders"
+    "reminders",
+    "vector_store",
+    "calendar_month"
   ],
   "hidden": [
     "calendar_month"
