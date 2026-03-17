@@ -1129,11 +1129,12 @@ def _content_neuropulse_cal(block_id: str) -> None:
     cfg = get_yandex_calendar_config()
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
 
-    # Виджет календаря Яндекса (если задан embed URL)
+    # Виджет календаря Яндекса (если задан embed URL). allow="microphone 'none'; camera 'none'" — дашборд не использует микрофон и не мешает ему в других вкладках (Chrome, Google Meet).
     if embed_url:
         safe_url = embed_url.replace('"', "&quot;").replace("<", "").replace(">", "")
         iframe_html = (
             f'<iframe src="{safe_url}" width="800" height="450" frameborder="0" '
+            'allow="microphone \'none\'; camera \'none\'" '
             'style="border: 1px solid #eee; max-width: 100%; box-sizing: border-box;"></iframe>'
         )
         st.components.v1.html(iframe_html, height=460)
