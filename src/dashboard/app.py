@@ -1249,21 +1249,22 @@ def _settings_neuropulse_cal(block_id: str) -> None:
 def _content_neuropulse_cal(block_id: str) -> None:
     try:
         from src.yandex_calendar_client import get_yandex_calendar_config, push_grant_and_kkt_to_yandex_calendar
-    except ImportError as e:
-        try:
-            (PROJECT_ROOT / "debug-b70e7d.log").parent.mkdir(parents=True, exist_ok=True)
-            with open(PROJECT_ROOT / "debug-b70e7d.log", "a", encoding="utf-8") as _f:
-                _f.write(json.dumps({"neuropulse_cal": "import_failed", "error": type(e).__name__, "msg": str(e)}, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
+    except ImportError:
         st.info("Модуль Яндекс Календаря недоступен.")
         return
+    cfg = get_yandex_calendar_config()
+    # #region agent log
     try:
-        with open(PROJECT_ROOT / "debug-b70e7d.log", "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"neuropulse_cal": "import_ok"}, ensure_ascii=False) + "\n")
+        _np = bool((cfg.get("neuropulse_calendar_url") or "").strip())
+        _emb = bool((cfg.get("neuropulse_embed_url") or "").strip())
+        _main = bool((cfg.get("calendar_url") or "").strip())
+        _used = "neuropulse" if _np else ("fallback_calendar" if _main else "none")
+        import json
+        with open("debug-7f0fda.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"sessionId": "7f0fda", "hypothesisId": "A", "location": "dashboard _content_neuropulse_cal", "message": "neuropulse block URLs", "data": {"has_neuropulse_calendar_url": _np, "has_calendar_url": _main, "has_neuropulse_embed_url": _emb, "source_used_for_sync": _used}, "timestamp": __import__("time").time() * 1000}, ensure_ascii=False) + "\n")
     except Exception:
         pass
-    cfg = get_yandex_calendar_config()
+    # #endregion
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
     neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
     can_sync = bool(neuro_url and cfg.get("user") and cfg.get("password"))

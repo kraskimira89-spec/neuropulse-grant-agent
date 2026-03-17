@@ -513,6 +513,15 @@ def push_grant_and_kkt_to_yandex_calendar(
     from datetime import timedelta
     cfg = get_yandex_calendar_config()
     url = (calendar_url or "").strip() or cfg.get("calendar_url") or cfg.get("neuropulse_calendar_url") or ""
+    # #region agent log
+    try:
+        _src = "param" if (calendar_url or "").strip() else ("cfg_calendar" if cfg.get("calendar_url") else "cfg_neuropulse")
+        import json
+        with open("debug-7f0fda.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"sessionId": "7f0fda", "hypothesisId": "C", "location": "push_grant_and_kkt_to_yandex_calendar", "message": "push URL source", "data": {"url_source": _src, "has_url": bool(url)}, "timestamp": __import__("time").time() * 1000}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # #endregion
     if not url:
         logger.warning("push_grant_and_kkt_to_yandex_calendar: не задан calendar_url")
         return 0, 0
@@ -676,6 +685,15 @@ def sync_grant_and_kkt_with_calendar(
     from datetime import timedelta
     cfg = get_yandex_calendar_config()
     url = (calendar_url or "").strip() or cfg.get("calendar_url") or cfg.get("neuropulse_calendar_url") or ""
+    # #region agent log
+    try:
+        _src = "param" if (calendar_url or "").strip() else ("cfg_calendar" if cfg.get("calendar_url") else "cfg_neuropulse")
+        import json
+        with open("debug-7f0fda.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"sessionId": "7f0fda", "hypothesisId": "C", "location": "sync_grant_and_kkt_with_calendar", "message": "sync URL source", "data": {"url_source": _src, "has_url": bool(url)}, "timestamp": __import__("time").time() * 1000}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # #endregion
     if not url or not cfg["user"] or not cfg["password"]:
         logger.warning("sync_grant_and_kkt_with_calendar: не задан calendar_url или учётные данные")
         return 0, 0, 0
