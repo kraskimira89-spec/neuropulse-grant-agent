@@ -1,0 +1,75 @@
+{
+  "api": {
+    "base_url": "",
+    "api_key": "",
+    "timeout_seconds": 30
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "logs/app.log",
+    "format": "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+  },
+  "project": {
+    "name": "neuropulse-grant-agent",
+    "version": "0.1.0"
+  },
+  "yandex_ai_studio": {
+    "agent_name": "Грантовый контролёр НейроПульс",
+    "agent_id": "",
+    "folder_id": "",
+    "model": "deepseek-v32/latest",
+    "instructions": "Ты — Грантовый контролёр НейроПульс. На простые приветствия отвечай кратко. На вопросы по гранту отвечай развёрнуто. Приоритет поиска ответов по базам знаний (от более важного к менее важному): 1) Заявка на грант, Договор о гранте, Ключевые контрольные точки гранта. 2) Данные агента Грантовый контролёр и документы, загруженные в Vector Store. 3) Сайт фонда Губернаторских грантов и обучение от них. 4) Сайт Гранты ЯНАО и НКО ЯНАО и обучение от них. 5) Сайт и обучение от фонда Президентских грантов. 6) Обучение от фонда Губернаторских грантов. 7) Социальное проектирование. Опирайся в первую очередь на пункты 1–2, при необходимости дополняй из остальных источников. Работа новых блоков дашборда: чтобы блоки «Управление рисками», «Коммуникации с грантодателем», «Файловый архив», «Настройки уведомлений» показывали данные, в папке data/ скопируй примеры в основные файлы (grant_risks.example.json → grant_risks.json, grant_communications.example.json → grant_communications.json, grant_documents_archive.example.json → grant_documents_archive.json, notification_settings.example.json → notification_settings.json) и заполни их. Запуск дашборда: streamlit run src/dashboard/app.py (из корня проекта, при необходимости --server.port 8502).",
+    "vector_store_id": ""
+  },
+  "notifications": {
+    "chat_url": "",
+    "days_before_event": 3
+  },
+  "yandex_calendar": {
+    "user": "",
+    "app_password": "",
+    "calendar_url": "",
+    "neuropulse_calendar_url": "",
+    "neuropulse_embed_url": ""
+  },
+  "yandex_disk": {
+    "upload_folder": "",
+    "project_folder_url": ""
+  },
+  "parser": {
+    "telegram_channels": [],
+    "disk_public_links": [],
+    "vector_store_id": "",
+    "max_telegram_posts": 100,
+    "max_disk_files": 50,
+    "chunk_size": 4000,
+    "output_dir": "data/parser_output"
+  },
+  "grant_tools": [
+    {
+      "id": "next_report_deadline",
+      "title": "Срок следующего отчёта",
+      "prompt": "Какой срок подачи следующего отчёта по гранту? Когда дедлайн?"
+    },
+    {
+      "id": "required_documents",
+      "title": "Список обязательных документов",
+      "prompt": "Перечисли обязательные документы для отчётности по гранту."
+    },
+    {
+      "id": "report_template_stage",
+      "title": "Шаблон отчёта по этапу",
+      "prompt": "Дай шаблон или структуру отчёта по этапу реализации гранта. Какие разделы обязательны?"
+    },
+    {
+      "id": "draft_section",
+      "title": "Черновик раздела «Выполненные работы»",
+      "prompt": "Помоги сформировать черновик раздела «Выполненные работы» по текущему этапу гранта."
+    },
+    {
+      "id": "metrics_required",
+      "title": "Какие метрики указать по положению",
+      "prompt": "Какие метрики мы обязаны указать по положению о гранте в отчёте?"
+    }
+  ]
+}

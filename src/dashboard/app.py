@@ -1249,9 +1249,20 @@ def _settings_neuropulse_cal(block_id: str) -> None:
 def _content_neuropulse_cal(block_id: str) -> None:
     try:
         from src.yandex_calendar_client import get_yandex_calendar_config, push_grant_and_kkt_to_yandex_calendar
-    except ImportError:
+    except ImportError as e:
+        try:
+            (PROJECT_ROOT / "debug-b70e7d.log").parent.mkdir(parents=True, exist_ok=True)
+            with open(PROJECT_ROOT / "debug-b70e7d.log", "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"neuropulse_cal": "import_failed", "error": type(e).__name__, "msg": str(e)}, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
         st.info("Модуль Яндекс Календаря недоступен.")
         return
+    try:
+        with open(PROJECT_ROOT / "debug-b70e7d.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"neuropulse_cal": "import_ok"}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
     cfg = get_yandex_calendar_config()
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
     neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
