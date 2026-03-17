@@ -1,0 +1,52 @@
+{
+  "header": {
+    "title": "НейроПульс: Возвращаем ритмы жизни",
+    "date_start": "2026-04-01",
+    "date_end": "2027-05-31",
+    "months_duration": 14,
+    "current_stage": "Подготовительный",
+    "responsible": "",
+    "updated_at": ""
+  },
+  "stages": [
+    {"stage": "Блок 1: Подготовительный", "activity": "Подписание партнёрского соглашения с Центром «Энтузиаст»", "plan_start": "2026-04-01", "plan_end": "2026-04-15", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0},
+    {"stage": "Блок 1: Подготовительный", "activity": "Закупка оборудования (аппарат БАК + ноутбук)", "plan_start": "2026-04-01", "plan_end": "2026-04-30", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0},
+    {"stage": "Блок 1: Подготовительный", "activity": "Обучение 2 специалистов", "plan_start": "", "plan_end": "", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0},
+    {"stage": "Блок 2: Основной", "activity": "Набор участников (20 ветеранов СВО)", "plan_start": "", "plan_end": "", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0},
+    {"stage": "Блок 2: Основной", "activity": "Проведение сеансов БАК (450 сеансов)", "plan_start": "", "plan_end": "", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0},
+    {"stage": "Блок 3: Завершающий", "activity": "Круглый стол с партнёрами", "plan_start": "", "plan_end": "", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0},
+    {"stage": "Блок 3: Завершающий", "activity": "Итоговое мероприятие «НейроФест»", "plan_start": "", "plan_end": "", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0},
+    {"stage": "Блок 3: Завершающий", "activity": "Подготовка финальной отчётности", "plan_start": "2027-04-01", "plan_end": "2027-05-31", "fact_start": "", "fact_end": "", "status": "not_started", "percent": 0}
+  ],
+  "budget": {
+    "total_plan": 2532745,
+    "total_fact": 0,
+    "grant_amount": 1264899,
+    "own_contribution": 1267846,
+    "items": [
+      {"name": "Оборудование", "plan": 1533499, "fact": 0, "children": [
+        {"name": "Аппарат БАК «Синхро-С»", "plan": 1400000, "fact": 0},
+        {"name": "Ноутбук", "plan": 98499, "fact": 0},
+        {"name": "Офисная мебель", "plan": 35000, "fact": 0}
+      ]},
+      {"name": "Командировочные", "plan": 23400, "fact": 0},
+      {"name": "Прочие расходы", "plan": 103000, "fact": 0},
+      {"name": "Собственный вклад", "plan": 1267846, "fact": 0}
+    ]
+  },
+  "indicators": [
+    {"name": "Зарегистрировано участников", "target": 20, "fact": 0},
+    {"name": "Проведено сеансов БАК", "target": 450, "fact": 0},
+    {"name": "Завершили полный курс (10+ сеансов)", "target": 20, "fact": 0},
+    {"name": "Снижение боли ≥50% (по ВАШ), % участников", "target": 83, "fact": 0, "suffix": "%"},
+    {"name": "Улучшение качества сна, % участников", "target": 70, "fact": 0, "suffix": "%"}
+  ],
+  "info_activity": {
+    "reach_target": 5000,
+    "reach_fact": 0,
+    "publications": 0,
+    "round_table_participants": 0,
+    "neurofest_target": 100,
+    "neurofest_fact": 0
+  }
+}

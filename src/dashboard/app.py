@@ -356,9 +356,7 @@ def _content_schedule(block_id: str) -> None:
         else:
             msg = "Календарь гранта пуст. Добавьте data/grant_calendar.json или переключите источник на «Яндекс Календарь» в настройках."
         st.markdown(
-            f'<div class="np-empty-state"><span class="np-empty-icon">📅</span><p>{msg}</p></div>'
-            '<style>.np-empty-state { background: #f8fafc; border-radius: 16px; padding: 32px; text-align: center; color: #64748b; border: 1px solid #e2e8f0; } '
-            '.np-empty-icon { font-size: 48px; display: block; margin-bottom: 12px; } .np-empty-state p { margin: 0; font-size: 0.95rem; }</style>',
+            f'<div class="np-empty-state"><span class="np-empty-icon">📅</span><p>{msg}</p></div>',
             unsafe_allow_html=True,
         )
         return
@@ -379,9 +377,7 @@ def _content_schedule(block_id: str) -> None:
     upcoming.sort(key=lambda x: x[0])
     if not upcoming:
         st.markdown(
-            f'<div class="np-empty-state"><span class="np-empty-icon">📅</span><p>Нет событий на ближайшие {days} дней</p></div>'
-            '<style>.np-empty-state { background: #f8fafc; border-radius: 16px; padding: 32px; text-align: center; color: #64748b; border: 1px solid #e2e8f0; } '
-            '.np-empty-icon { font-size: 48px; display: block; margin-bottom: 12px; } .np-empty-state p { margin: 0; font-size: 0.95rem; }</style>',
+            f'<div class="np-empty-state"><span class="np-empty-icon">📅</span><p>Нет событий на ближайшие {days} дней</p></div>',
             unsafe_allow_html=True,
         )
         return
@@ -441,9 +437,7 @@ def _content_reminders(block_id: str) -> None:
             reminders_7.append((d, title))
     if not (reminders_7 or reminders_3 or reminders_1 or today_ev or overdue):
         st.markdown(
-            '<div class="np-empty-state"><span class="np-empty-icon">🔔</span><p>Нет событий в зоне напоминаний (за 7/3/1 дн., сегодня, просрочено). Добавьте события в календарь.</p></div>'
-            '<style>.np-empty-state { background: #f8fafc; border-radius: 16px; padding: 32px; text-align: center; color: #64748b; border: 1px solid #e2e8f0; } '
-            '.np-empty-icon { font-size: 48px; display: block; margin-bottom: 12px; } .np-empty-state p { margin: 0; font-size: 0.95rem; }</style>',
+            '<div class="np-empty-state"><span class="np-empty-icon">🔔</span><p>Нет событий в зоне напоминаний (за 7/3/1 дн., сегодня, просрочено). Добавьте события в календарь.</p></div>',
             unsafe_allow_html=True,
         )
         return
@@ -500,23 +494,34 @@ def _content_kkt(block_id: str) -> None:
         st.caption(f"Нет ККТ с годом срока не раньше {min_year}. Измените фильтр в настройках блока.")
         return
     today = datetime.utcnow().date()
-    rows = []
-    for i, p in enumerate(filtered, 1):
+
+    def _esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    cards = []
+    for p in filtered:
         date_end = (p.get("date_end") or "").strip()
-        desc = p.get("description", "")
-        expected = (p.get("expected_result") or "").strip()
+        desc = _esc((p.get("description") or "").strip() or "—")
         status = p.get("status", "not_started")
         st_label = STATUS_LABELS.get(status, status)
-        overdue = ""
+        status_class = f"np-{status.replace(' ', '_')}"
         if date_end:
             try:
                 d = datetime.strptime(date_end[:10], "%Y-%m-%d").date()
                 if d < today and status != "done":
-                    overdue = " (просрочено)"
+                    status_class = "np-overdue"
+                    st_label = st_label + " (просрочено)"
             except ValueError:
                 pass
-        rows.append({"№": i, "Контрольная точка": desc, "Срок": date_end, "Ожидаемый результат": expected, "Статус": st_label + overdue})
-    st.dataframe(rows, width="stretch", hide_index=True, column_config={"Контрольная точка": st.column_config.TextColumn("Контрольная точка", width="medium")})
+        date_fmt = _esc(date_end) if date_end else "—"
+        cards.append(
+            f'<div class="np-milestone-card">'
+            f'<span class="np-milestone-icon">🎯</span>'
+            f'<div><div class="np-milestone-title">{desc}</div>'
+            f'<div class="np-milestone-date">до {date_fmt}</div>'
+            f'<div class="np-milestone-status {status_class}">{_esc(st_label)}</div></div></div>'
+        )
+    st.markdown('<div class="np-milestone-grid">' + "".join(cards) + "</div>", unsafe_allow_html=True)
     st.caption("Источник: АНО «Гранты Ямала». Редактирование — в личном кабинете информационной системы грантодателя.")
 
 
@@ -1608,6 +1613,37 @@ def _content_contacts(block_id: str) -> None:
             )
             st.rerun()
 
+    # Кнопка «Удалить»: удаляются строки, отмеченные в столбце «Удалить»
+    current = st.session_state[key_contacts]
+    marked = sum(1 for r in current if r.get("Удалить"))
+    if current:
+        if st.button("🗑 Удалить", key="contacts_delete_btn"):
+            if marked == 0:
+                st.warning("Отметьте в таблице строки для удаления (столбец «Удалить»).")
+            else:
+                new_rows = [r for r in current if not r.get("Удалить")]
+                for r in new_rows:
+                    r["Удалить"] = False
+                st.session_state[key_contacts] = new_rows
+                to_save = []
+                for r in new_rows:
+                    rec = {"name": (r.get("Имя") or "").strip(), "role": (r.get("Роль") or "").strip(), "email": (r.get("Email") or "").strip()}
+                    chat_link = (r.get("Макс.") or "").strip()
+                    if chat_link:
+                        rec["chat_link"] = chat_link
+                    if st.session_state.get("dashboard_contacts_has_phone"):
+                        rec["phone"] = (r.get("Телефон") or "").strip()
+                    to_save.append(rec)
+                try:
+                    CONTACTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    with open(CONTACTS_PATH, "w", encoding="utf-8") as f:
+                        json.dump(to_save, f, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
+                st.rerun()
+        elif marked > 0:
+            st.caption(f"Отмечено строк для удаления: {marked}. Нажмите «🗑 Удалить».")
+
 
 def block_contacts() -> None:
     _block_with_settings("👥 Контакты по гранту", "contacts", _content_contacts, _settings_contacts)
@@ -1674,19 +1710,30 @@ def _content_stages(block_id: str) -> None:
     if not stages:
         st.info("Добавьте данные в data/grant_project_dashboard.json (секция stages). Пример: data/grant_project_dashboard.example.json")
         return
-    rows = []
+
+    def _esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    table_rows = []
     for s in stages:
-        status_key = (s.get("status") or "not_started")
-        status_label = STATUS_LABELS.get(status_key, status_key)
-        rows.append({
-            "Этап": s.get("stage", ""),
-            "Мероприятие": s.get("activity", ""),
-            "План: даты": f"{s.get('plan_start') or '—'} — {s.get('plan_end') or '—'}",
-            "Факт: даты": f"{s.get('fact_start') or '—'} — {s.get('fact_end') or '—'}",
-            "Статус": status_label,
-            "%": s.get("percent", 0),
-        })
-    st.dataframe(rows, width="stretch", hide_index=True)
+        status_key = (s.get("status") or "not_started").replace(" ", "_")
+        status_label = STATUS_LABELS.get(s.get("status") or "not_started", s.get("status") or "not_started")
+        pct = min(100, max(0, int(s.get("percent", 0))))
+        stage_name = _esc(s.get("stage", ""))
+        activity = _esc(s.get("activity", ""))
+        plan_dates = _esc(f"{s.get('plan_start') or '—'} — {s.get('plan_end') or '—'}")
+        fact_dates = _esc(f"{s.get('fact_start') or '—'} — {s.get('fact_end') or '—'}")
+        table_rows.append(
+            f'<tr><td>{stage_name}</td><td>{activity}</td><td>{plan_dates}</td><td>{fact_dates}</td>'
+            f'<td><span class="np-status-dot np-{status_key}"></span>{_esc(status_label)}</td>'
+            f'<td class="np-progress-cell"><div class="np-progress-bar-inline"><div class="np-progress-fill-inline" style="width:{pct}%"></div></div></td></tr>'
+        )
+    html = (
+        '<table class="np-stages-table"><thead><tr>'
+        '<th>Этап</th><th>Мероприятие</th><th>План: даты</th><th>Факт: даты</th><th>Статус</th><th>%</th>'
+        '</tr></thead><tbody>' + "".join(table_rows) + "</tbody></table>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def block_stages() -> None:
@@ -1798,16 +1845,33 @@ def _content_info_activity(block_id: str) -> None:
     if not ia:
         st.info("Добавьте секцию info_activity в data/grant_project_dashboard.json.")
         return
-    reach_t = ia.get("reach_target", 0)
+    reach_t = ia.get("reach_target", 0) or 1
     reach_f = ia.get("reach_fact", 0)
-    st.metric("Охват кампании (жители ЯНАО)", f"{reach_f:,}".replace(",", " ") if isinstance(reach_f, (int, float)) else reach_f, f"цель {reach_t:,}".replace(",", " ") if reach_t else "")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Публикации в СМИ", ia.get("publications", 0), "")
-    with col2:
-        st.metric("Участники круглого стола", ia.get("round_table_participants", 0), "")
-    with col3:
-        st.metric("НейроФест: участники", ia.get("neurofest_fact", 0), f"план {ia.get('neurofest_target', 100)}")
+    neuro_t = ia.get("neurofest_target", 100) or 1
+    neuro_f = ia.get("neurofest_fact", 0)
+    pub = ia.get("publications", 0)
+    round_n = ia.get("round_table_participants", 0)
+    reach_pct = min(100, round(100 * reach_f / reach_t)) if reach_t else 0
+    neuro_pct = min(100, round(100 * neuro_f / neuro_t)) if neuro_t else 0
+    reach_deg = round(3.6 * reach_pct)
+    neuro_deg = round(3.6 * neuro_pct)
+
+    def _circle_card(deg: float, center_text: str, label: str, target_text: str) -> str:
+        style = f"background: conic-gradient(#3b82f6 0deg {deg}deg, #e2e8f0 {deg}deg 360deg);"
+        return (
+            f'<div class="np-circle-card">'
+            f'<div class="np-circle-ring" style="{style}"><span class="np-circle-inner">{center_text}</span></div>'
+            f'<div class="np-circle-label">{label}</div>'
+            f'<div class="np-circle-target">{target_text}</div></div>'
+        )
+
+    cards_html = [
+        _circle_card(reach_deg, f"{reach_f:,}".replace(",", " "), "Охват кампании (ЯНАО)", f"цель {reach_t:,}".replace(",", " ")),
+        _circle_card(0, str(pub), "Публикации в СМИ", ""),
+        _circle_card(0, str(round_n), "Участники круглого стола", ""),
+        _circle_card(neuro_deg, str(neuro_f), "НейроФест: участники", f"план {neuro_t}"),
+    ]
+    st.markdown('<div class="np-circle-grid">' + "".join(cards_html) + "</div>", unsafe_allow_html=True)
 
 
 def block_info_activity() -> None:

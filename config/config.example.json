@@ -32,6 +32,26 @@
     "neuropulse_calendar_url": "",
     "neuropulse_embed_url": ""
   },
+  "calendar_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "add_calendar_event",
+        "description": "Добавить событие в календарь Нейропульс. Используй, когда пользователь просит запланировать, добавить в календарь, напомнить о дате.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "summary": { "type": "string", "description": "Название события" },
+            "description": { "type": "string", "description": "Описание события" },
+            "dtstart": { "type": "string", "description": "Дата начала в формате YYYY-MM-DD" },
+            "dtend": { "type": "string", "description": "Дата окончания YYYY-MM-DD (опционально)" },
+            "rrule": { "type": "string", "description": "Правило повторения, например FREQ=WEEKLY;BYDAY=MO (опционально)" }
+          },
+          "required": ["summary", "dtstart"]
+        }
+      }
+    }
+  ],
   "yandex_disk": {
     "upload_folder": "",
     "project_folder_url": ""

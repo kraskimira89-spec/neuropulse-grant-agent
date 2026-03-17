@@ -1,0 +1,5 @@
+{
+  "email": "",
+  "reminders_enabled": true,
+  "days_before": [7, 3, 1]
+}

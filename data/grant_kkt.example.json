@@ -1,0 +1,11 @@
+{
+  "comment": "Ключевые контрольные точки (ККТ) по инструкции АНО «Гранты Ямала». Редактирование в личном кабинете системы; здесь — локальная копия для дашборда.",
+  "points": [
+    {"description": "Закупка аппарата БАК «Синхро-С» 8К", "date_end": "2026-04-30", "expected_result": "1 шт.", "status": "not_started"},
+    {"description": "Обучение 2 специалистов", "date_end": "2026-05-31", "expected_result": "2 чел.", "status": "not_started"},
+    {"description": "Набор 20 ветеранов СВО", "date_end": "2026-06-30", "expected_result": "20 чел.", "status": "not_started"},
+    {"description": "Проведение не менее 450 сеансов реабилитации", "date_end": "2027-03-31", "expected_result": "450 сеансов", "status": "not_started"},
+    {"description": "Организация круглого стола", "date_end": "2027-04-15", "expected_result": "1 мероприятие", "status": "not_started"},
+    {"description": "Подготовка итогового отчёта", "date_end": "2027-05-31", "expected_result": "Отчёт сдана", "status": "not_started"}
+  ]
+}

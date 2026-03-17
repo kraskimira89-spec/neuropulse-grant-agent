@@ -1,0 +1,28 @@
+{
+  "left": [
+    "grant_header",
+    "stages",
+    "kkt",
+    "budget",
+    "indicators",
+    "risks",
+    "info_activity",
+    "schedule",
+    "calendar_month",
+    "audit",
+    "agent_stats",
+    "status"
+  ],
+  "right": [
+    "neuropulse_calendar",
+    "chat_and_tools",
+    "contacts",
+    "notifications",
+    "communications",
+    "documents_archive",
+    "links",
+    "vector_store",
+    "parser",
+    "reminders"
+  ]
+}
