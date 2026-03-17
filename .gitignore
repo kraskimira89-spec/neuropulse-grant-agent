@@ -56,6 +56,7 @@ logs/
 data/.last_conversation_id
 data/chat_audit.jsonl
 data/chat_messages.json
+data/grant_calendar.json
 data/grant_contacts.json
 data/grant_project_dashboard.json
 data/parser_output/

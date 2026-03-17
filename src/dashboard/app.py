@@ -2245,21 +2245,31 @@ def _render_layout_editor() -> None:
 
 
 def _inject_theme_css() -> None:
-    """Подключает тему НейроПульс: neuropulse_theme.css + шрифт Inter."""
-    theme_path = PROJECT_ROOT / "src" / "dashboard" / "neuropulse_theme.css"
+    """Подключает тему НейроПульс: neuropulse_theme.css (рядом с app.py) + шрифт Inter."""
+    # Путь от файла app.py, чтобы тема находилась при любом текущем каталоге запуска
+    _dashboard_dir = Path(__file__).resolve().parent
+    theme_path = _dashboard_dir / "neuropulse_theme.css"
     if theme_path.exists():
         try:
             css = theme_path.read_text(encoding="utf-8")
-            st.markdown(f"<style>\n{css}\n</style>", unsafe_allow_html=True)
+            st.markdown(f"<style id=\"neuropulse-theme\">\n{css}\n</style>", unsafe_allow_html=True)
         except Exception as e:
-            logger.debug("Не удалось загрузить тему дашборда: %s", e)
+            logger.warning("Не удалось загрузить тему дашборда %s: %s", theme_path, e)
+            _inject_theme_fallback()
     else:
-        st.markdown(
-            "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
-            "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
-            "<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">",
-            unsafe_allow_html=True,
-        )
+        logger.warning("Файл темы не найден: %s", theme_path)
+        _inject_theme_fallback()
+
+
+def _inject_theme_fallback() -> None:
+    """Минимальные стили и шрифт Inter, если neuropulse_theme.css недоступен."""
+    st.markdown(
+        "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">"
+        "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>"
+        "<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">"
+        "<style>body,.stApp{background:#f8fafc!important;} .main .block-container{font-family:'Inter',sans-serif!important;}</style>",
+        unsafe_allow_html=True,
+    )
 
 
 def main() -> None:
