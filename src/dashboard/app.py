@@ -95,7 +95,7 @@ def _inject_block_palette_css() -> None:
     """Генерирует и инжектирует CSS-правила постельных оттенков для каждого блока."""
     rules: list[str] = []
     for bid, (card_bg, hdr_bg) in BLOCK_PALETTE.items():
-        sel = f'[data-testid="stVerticalBlockBorderWrapper"]:has(.np-bm-{bid})'
+        sel = f'[data-testid="stVerticalBlock"]:has(.np-bm-{bid})'
         rules.append(
             f'{sel} {{'
             f' background: linear-gradient(to bottom, {hdr_bg} 0px, {hdr_bg} 62px, {card_bg} 62px, {card_bg} 100%) !important;'
@@ -107,16 +107,45 @@ def _inject_block_palette_css() -> None:
 
 
 def _block_header(title: str, block_id: str) -> bool:
-    """Заголовок блока: название и шестерёнка. Если контекст раскладки задан, показываем только шестерёнку (название и стрелки уже в заголовке блока)."""
+    """Заголовок блока: название и шестерёнка. Если контекст раскладки задан, показываем название + стрелки + шестерёнку в одну строку."""
     key_open = f"dashboard_settings_{block_id}"
     if key_open not in st.session_state:
         st.session_state[key_open] = False
 
     has_layout_context = "dashboard_current_block" in st.session_state
     if has_layout_context:
-        if st.button("⚙️", key=f"gear_{block_id}", help="Настройки блока"):
-            st.session_state[key_open] = not st.session_state[key_open]
-            st.rerun()
+        ctx = st.session_state.get("dashboard_current_block", {})
+        side = ctx.get("side", "left")
+        index = ctx.get("index", 0)
+        total = ctx.get("total", 1)
+        left_ids, right_ids = _load_dashboard_layout()
+        col_title, c0, c1, c2, c3, c_gear = st.columns([4, 1, 1, 1, 1, 1])
+        with col_title:
+            st.subheader(title)
+        with c0:
+            if st.button("←", key=f"arr_l_{block_id}", help="В левую колонку", disabled=(side != "right")):
+                _apply_block_move("left", block_id, side, index, total, left_ids, right_ids)
+                _save_dashboard_layout(left_ids, right_ids)
+                st.rerun()
+        with c1:
+            if st.button("↑", key=f"arr_u_{block_id}", help="Выше", disabled=(index <= 0)):
+                _apply_block_move("up", block_id, side, index, total, left_ids, right_ids)
+                _save_dashboard_layout(left_ids, right_ids)
+                st.rerun()
+        with c2:
+            if st.button("↓", key=f"arr_d_{block_id}", help="Ниже", disabled=(index >= total - 1)):
+                _apply_block_move("down", block_id, side, index, total, left_ids, right_ids)
+                _save_dashboard_layout(left_ids, right_ids)
+                st.rerun()
+        with c3:
+            if st.button("→", key=f"arr_r_{block_id}", help="В правую колонку", disabled=(side != "left")):
+                _apply_block_move("right", block_id, side, index, total, left_ids, right_ids)
+                _save_dashboard_layout(left_ids, right_ids)
+                st.rerun()
+        with c_gear:
+            if st.button("⚙️", key=f"gear_{block_id}", help="Настройки блока"):
+                st.session_state[key_open] = not st.session_state[key_open]
+                st.rerun()
     else:
         col1, col2 = st.columns([5, 1])
         with col1:
@@ -1740,7 +1769,7 @@ def _content_contacts(block_id: str) -> None:
     if key_contacts not in st.session_state:
         rows = []
         for c in contacts:
-            r = {"Имя": (c.get("name") or "").strip() or "", "Роль": (c.get("role") or "").strip() or "", "Email": (c.get("email") or "").strip() or "", "Макс.": (c.get("chat_link") or c.get("max_chat") or "").strip() or "", "Удалить": False}
+            r = {"✓": False, "Имя": (c.get("name") or "").strip() or "", "Роль": (c.get("role") or "").strip() or "", "Email": (c.get("email") or "").strip() or "", "Макс.": (c.get("chat_link") or c.get("max_chat") or "").strip() or ""}
             if has_phone:
                 r["Телефон"] = (c.get("phone") or "").strip() or ""
             rows.append(r)
@@ -1759,19 +1788,23 @@ def _content_contacts(block_id: str) -> None:
     rows = st.session_state[key_contacts]
 
     col_config = {
+        "✓": st.column_config.CheckboxColumn("✓", width="small", help="Отметьте строки для действия"),
         "Имя": st.column_config.TextColumn("Имя", width="medium"),
         "Роль": st.column_config.TextColumn("Роль", width="medium"),
         "Email": st.column_config.TextColumn("Email", width="medium"),
         "Макс.": st.column_config.LinkColumn("Макс.", width="medium", help="Ссылка на чат с сотрудником (Макс)"),
-        "Удалить": st.column_config.CheckboxColumn("Удалить", width="small", help="Отметьте и нажмите «Сохранить»"),
     }
     if has_phone:
         col_config["Телефон"] = st.column_config.TextColumn("Телефон", width="medium")
+    col_order = ["✓", "Имя", "Роль", "Email", "Макс."]
+    if has_phone:
+        col_order.append("Телефон")
     edited = st.data_editor(
         rows,
         width="stretch",
         hide_index=True,
         column_config=col_config,
+        column_order=col_order,
         key="contacts_data_editor",
         num_rows="dynamic",
     )
@@ -1783,12 +1816,12 @@ def _content_contacts(block_id: str) -> None:
             st.session_state["dashboard_contacts_has_phone"] = True
             ordered = []
             for r in st.session_state[key_contacts]:
-                ordered.append({"Имя": r.get("Имя", ""), "Роль": r.get("Роль", ""), "Email": r.get("Email", ""), "Макс.": r.get("Макс.", ""), "Телефон": r.get("Телефон", ""), "Удалить": r.get("Удалить", False)})
+                ordered.append({"✓": r.get("✓", False), "Имя": r.get("Имя", ""), "Роль": r.get("Роль", ""), "Email": r.get("Email", ""), "Макс.": r.get("Макс.", ""), "Телефон": r.get("Телефон", "")})
             st.session_state[key_contacts] = ordered
             st.rerun()
     with btn_col2:
         if st.button("➕ Добавить строку", key="contacts_add_row"):
-            new_row = {"Имя": "", "Роль": "", "Email": "", "Макс.": "", "Удалить": False}
+            new_row = {"✓": False, "Имя": "", "Роль": "", "Email": "", "Макс.": ""}
             if st.session_state.get("dashboard_contacts_has_phone"):
                 new_row["Телефон"] = ""
             st.session_state[key_contacts].append(new_row)
@@ -1797,7 +1830,7 @@ def _content_contacts(block_id: str) -> None:
         if st.button("💾 Сохранить в файл", key="contacts_save", type="primary"):
             to_save = []
             for r in edited:
-                if r.get("Удалить"):
+                if r.get("✓"):
                     continue
                 rec = {"name": (r.get("Имя") or "").strip(), "role": (r.get("Роль") or "").strip(), "email": (r.get("Email") or "").strip()}
                 chat_link = (r.get("Макс.") or "").strip()
@@ -1822,17 +1855,17 @@ def _content_contacts(block_id: str) -> None:
             )
             st.rerun()
 
-    # Кнопка «Удалить»: удаляются строки, отмеченные в столбце «Удалить»
+    # Кнопка «Удалить»: удаляются строки, отмеченные галочкой «✓»
     current = st.session_state[key_contacts]
-    marked = sum(1 for r in current if r.get("Удалить"))
+    marked = sum(1 for r in current if r.get("✓"))
     if current:
         if st.button("🗑 Удалить", key="contacts_delete_btn"):
             if marked == 0:
-                st.warning("Отметьте в таблице строки для удаления (столбец «Удалить»).")
+                st.warning("Отметьте в таблице строки для удаления (столбец «✓»).")
             else:
-                new_rows = [r for r in current if not r.get("Удалить")]
+                new_rows = [r for r in current if not r.get("✓")]
                 for r in new_rows:
-                    r["Удалить"] = False
+                    r["✓"] = False
                 st.session_state[key_contacts] = new_rows
                 to_save = []
                 for r in new_rows:
@@ -1851,7 +1884,7 @@ def _content_contacts(block_id: str) -> None:
                     pass
                 st.rerun()
         elif marked > 0:
-            st.caption(f"Отмечено строк для удаления: {marked}. Нажмите «🗑 Удалить».")
+            st.caption(f"Отмечено: {marked} стр. Нажмите «🗑 Удалить» для удаления.")
 
 
 def block_contacts() -> None:

@@ -84,36 +84,30 @@ h3,
   border: none !important;
 }
 
-/* ── Карточки блоков (border=True контейнер) ────────────── */
-[data-testid="stVerticalBlockBorderWrapper"] {
+/* ── Карточки блоков (border=True контейнер, Streamlit ≥1.45) ── */
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) {
   background: var(--np-surface) !important;
   border: 1.5px solid var(--np-border) !important;
   border-radius: var(--np-radius) !important;
-  padding: 0 !important;
   margin-bottom: 16px !important;
   box-shadow: var(--np-shadow-sm) !important;
   transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.2s !important;
   overflow: hidden !important;
 }
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]):hover {
   box-shadow: var(--np-shadow-hover) !important;
 }
 
-/* Внутренний отступ карточки */
-[data-testid="stVerticalBlockBorderWrapper"] > div {
-  padding: 18px 22px !important;
-}
-
 /* Разделительная линия под заголовком карточки */
-[data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"]:first-child {
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stVerticalBlock"]:first-of-type {
   padding-bottom: 10px !important;
   border-bottom: 1px solid var(--np-border) !important;
   margin-bottom: 14px !important;
 }
 
 /* ── Шестерёнка ─────────────────────────────────────────── */
-[data-testid="stVerticalBlockBorderWrapper"] .stButton > button[title="Настройки блока"],
-[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"][title="Настройки блока"] {
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stButton > button[title="Настройки блока"],
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) button[kind="secondary"][title="Настройки блока"] {
   width: 30px !important;
   height: 30px !important;
   min-height: 30px !important;
