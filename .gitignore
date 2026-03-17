@@ -58,7 +58,12 @@ data/chat_audit.jsonl
 data/chat_messages.json
 data/grant_calendar.json
 data/grant_contacts.json
+data/grant_communications.json
+data/grant_documents_archive.json
+data/grant_kkt.json
 data/grant_project_dashboard.json
+data/grant_risks.json
+data/notification_settings.json
 data/parser_output/
 data/parser_last_run.json
 *.tmp

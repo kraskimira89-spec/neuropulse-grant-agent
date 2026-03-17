@@ -567,8 +567,9 @@ def _load_all_grant_and_kkt_events(
     min_year: int = 2026,
     start_date: datetime.date | None = None,
     end_date: datetime.date | None = None,
+    force_local: bool = False,
 ) -> list[dict]:
-    """Объединяет события из календаря гранта, ККТ и этапов (grant_project_dashboard). У каждого события поле stage для раскраски по этапу. Если заданы start_date/end_date — ими ограничиваем период вместо today..today+days_ahead."""
+    """Объединяет события из календаря гранта, ККТ и этапов (grant_project_dashboard). У каждого события поле stage для раскраски по этапу. Если заданы start_date/end_date — ими ограничиваем период вместо today..today+days_ahead. force_local=True — всегда читать из grant_calendar.json, игнорируя настройку источника «Яндекс Календарь»."""
     today = datetime.utcnow().date()
     if start_date is not None and end_date is not None:
         period_start, period_end = start_date, end_date
@@ -579,7 +580,8 @@ def _load_all_grant_and_kkt_events(
     stage_ranges = _load_stage_ranges()
     out = []
 
-    for ev in _load_schedule_events():
+    grant_events = _load_calendar_local() if force_local else _load_schedule_events()
+    for ev in grant_events:
         try:
             d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
         except (KeyError, ValueError):
@@ -1272,15 +1274,110 @@ def _content_neuropulse_cal(block_id: str) -> None:
         except Exception:
             st.session_state["neuropulse_auto_synced"] = True
 
-    # Виджет календаря Яндекса (если задан embed URL). allow="microphone 'none'; camera 'none'" — дашборд не использует микрофон и не мешает ему в других вкладках (Chrome, Google Meet).
+    # ---------- Встроенная сетка-месяц (локальные данные, цвет по блоку) ----------
+    import calendar as _cal_mod
+    _today = datetime.utcnow().date()
+    _np_year_key = "dashboard_neuropulse_cal_year"
+    _np_month_key = "dashboard_neuropulse_cal_month"
+    if _np_year_key not in st.session_state:
+        st.session_state[_np_year_key] = _today.year
+    if _np_month_key not in st.session_state:
+        st.session_state[_np_month_key] = _today.month
+    _cy = int(st.session_state[_np_year_key])
+    _cm = int(st.session_state[_np_month_key])
+
+    _nav_col1, _nav_col2, _nav_col3 = st.columns([1, 4, 1])
+    with _nav_col1:
+        if st.button("◀", key="np_cal_prev"):
+            if _cm == 1:
+                st.session_state[_np_year_key] = _cy - 1
+                st.session_state[_np_month_key] = 12
+            else:
+                st.session_state[_np_month_key] = _cm - 1
+            st.rerun()
+    with _nav_col2:
+        _month_names = "Январь Февраль Март Апрель Май Июнь Июль Август Сентябрь Октябрь Ноябрь Декабрь".split()
+        st.markdown(f"<div style='text-align:center;font-weight:600;font-size:1.05rem;padding:0.3rem 0'>{_month_names[_cm-1]} {_cy}</div>", unsafe_allow_html=True)
+    with _nav_col3:
+        if st.button("▶", key="np_cal_next"):
+            if _cm == 12:
+                st.session_state[_np_year_key] = _cy + 1
+                st.session_state[_np_month_key] = 1
+            else:
+                st.session_state[_np_month_key] = _cm + 1
+            st.rerun()
+
+    _min_year_grid = _get("dashboard_neuropulse_min_year", 2026)
+    _first_day = datetime(_cy, _cm, 1).date()
+    _last_day_num = _cal_mod.monthrange(_cy, _cm)[1]
+    _last_day = datetime(_cy, _cm, _last_day_num).date()
+    _grid_events = _load_all_grant_and_kkt_events(min_year=_min_year_grid, start_date=_first_day, end_date=_last_day, force_local=True)
+    _evs_by_day: dict[int, list[dict]] = {}
+    for _ev in _grid_events:
+        try:
+            _d = datetime.fromisoformat(_ev["date"].replace("Z", "")).date()
+        except (KeyError, ValueError):
+            continue
+        if _d.year == _cy and _d.month == _cm:
+            _evs_by_day.setdefault(_d.day, []).append(_ev)
+
+    _cal_obj = _cal_mod.Calendar(firstweekday=0)
+    _weeks = _cal_obj.monthdayscalendar(_cy, _cm)
+    _weekdays = "Пн Вт Ср Чт Пт Сб Вс".split()
+    _cells = []
+    for _week in _weeks:
+        for _day in _week:
+            if _day == 0:
+                _cells.append('<td class="np-cal-empty"></td>')
+            else:
+                _day_evs = _evs_by_day.get(_day, [])
+                _stage = _day_evs[0].get("stage", "") if _day_evs else ""
+                _bg = STAGE_BG_COLORS.get(_stage, "transparent")
+                _is_today = (_d := datetime(_cy, _cm, _day).date()) and _d == _today
+                _style = f"background-color:{_bg};" if _bg != "transparent" else ""
+                if _is_today:
+                    _style += "font-weight:700;outline:2px solid #5c6bc0;outline-offset:-2px;"
+                _mark = "•" if _day_evs else ""
+                _tooltip = " | ".join(e.get("title", "") for e in _day_evs[:3])
+                _title_attr = f' title="{_tooltip}"' if _tooltip else ""
+                _cells.append(f'<td class="np-cal-day" style="{_style}"{_title_attr}>{_day}{_mark}</td>')
+    _rows_html = "".join(
+        "<tr>" + "".join(_cells[i : i + 7]) + "</tr>"
+        for i in range(0, len(_cells), 7)
+    )
+    _thead = "<tr>" + "".join(f"<th>{w}</th>" for w in _weekdays) + "</tr>"
+    _grid_html = f"""<style>
+  .np-cal-table{{border-collapse:collapse;font-size:0.9rem;width:100%;max-width:480px}}
+  .np-cal-table td,.np-cal-table th{{border:1px solid #ddd;padding:0.35rem 0.5rem;text-align:center}}
+  .np-cal-empty{{background:#fafafa}}
+  .np-cal-day{{border-radius:4px;cursor:default}}
+  .np-cal-table th{{background:#f5f5f5;font-weight:600}}
+</style>
+<table class="np-cal-table"><thead>{_thead}</thead><tbody>{_rows_html}</tbody></table>
+<p style="font-size:0.8rem;color:#888;margin:0.3rem 0 0 0">• — день с событием. Цвет: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый. Список — в «Ближайшие сроки» и «Календарь Нейропульс».</p>"""
+    st.markdown(_grid_html, unsafe_allow_html=True)
+    st.divider()
+
+    # Виджет календаря Яндекса (если задан embed URL).
+    # Если в embed_url нет layer_ids, извлекаем ID из neuropulse_calendar_url и добавляем.
+    # Заменяем week-view на month-view чтобы показывались предстоящие события.
     if embed_url:
+        import re as _re
+        if "layer_ids=" not in embed_url and neuro_url:
+            cal_id_match = _re.search(r"/events-(\d+)/?", neuro_url)
+            if cal_id_match:
+                layer_id = cal_id_match.group(1)
+                sep = "&" if "?" in embed_url else "?"
+                embed_url = embed_url + f"{sep}layer_ids={layer_id}"
+        # week → month чтобы было видно предстоящие события
+        embed_url = embed_url.replace("/embed/week", "/embed/month")
         safe_url = embed_url.replace('"', "&quot;").replace("<", "").replace(">", "")
         iframe_html = (
-            f'<iframe src="{safe_url}" width="800" height="450" frameborder="0" '
+            f'<iframe src="{safe_url}" width="800" height="600" frameborder="0" '
             'allow="microphone \'none\'; camera \'none\'" '
             'style="border: 1px solid #eee; max-width: 100%; box-sizing: border-box;"></iframe>'
         )
-        st.components.v1.html(iframe_html, height=460)
+        st.components.v1.html(iframe_html, height=610)
     else:
         st.caption("Чтобы встроить виджет календаря, укажите **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** в config/.env (Экспорт → вставка на сайт в calendar.yandex.ru).")
 
@@ -1307,13 +1404,14 @@ def _content_neuropulse_cal(block_id: str) -> None:
     except ImportError:
         pass
 
-    # Список: все события гранта и ККТ (с метками Грант / ККТ)
+    # Список: все события гранта и ККТ (с метками Грант / ККТ).
+    # force_local=True — всегда из локальных файлов, не зависит от настройки источника «Яндекс Календарь».
     st.markdown("**Все события гранта и ККТ** (отмечены в календаре после синхронизации)")
     days = _get("dashboard_neuropulse_days", 60)
     min_year = _get("dashboard_neuropulse_min_year", 2026)
     show_desc = _get("dashboard_neuropulse_show_desc", True)
     today = datetime.utcnow().date()
-    events = _load_all_grant_and_kkt_events(days_ahead=days, min_year=min_year)
+    events = _load_all_grant_and_kkt_events(days_ahead=days, min_year=min_year, force_local=True)
     if not events:
         st.caption("За выбранный период событий гранта и ККТ нет. Добавьте данные в grant_calendar.json или grant_kkt.json (и выберите источник «Яндекс Календарь» в блоке «Ближайшие сроки»).")
         return
@@ -2246,7 +2344,6 @@ def _render_layout_editor() -> None:
 
 def _inject_theme_css() -> None:
     """Подключает тему НейроПульс: neuropulse_theme.css (рядом с app.py) + шрифт Inter."""
-    # Путь от файла app.py, чтобы тема находилась при любом текущем каталоге запуска
     _dashboard_dir = Path(__file__).resolve().parent
     theme_path = _dashboard_dir / "neuropulse_theme.css"
     if theme_path.exists():
