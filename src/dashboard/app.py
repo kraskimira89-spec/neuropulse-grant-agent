@@ -541,10 +541,19 @@ def _get_stage_for_date(d: datetime.date, stage_ranges: list[tuple[str, str, str
     return ""
 
 
-def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) -> list[dict]:
-    """Объединяет события из календаря гранта, ККТ и этапов (grant_project_dashboard). У каждого события поле stage для раскраски по этапу."""
+def _load_all_grant_and_kkt_events(
+    days_ahead: int = 365,
+    min_year: int = 2026,
+    start_date: datetime.date | None = None,
+    end_date: datetime.date | None = None,
+) -> list[dict]:
+    """Объединяет события из календаря гранта, ККТ и этапов (grant_project_dashboard). У каждого события поле stage для раскраски по этапу. Если заданы start_date/end_date — ими ограничиваем период вместо today..today+days_ahead."""
     today = datetime.utcnow().date()
-    end = today + timedelta(days=days_ahead)
+    if start_date is not None and end_date is not None:
+        period_start, period_end = start_date, end_date
+    else:
+        period_start = today
+        period_end = today + timedelta(days=days_ahead)
     cutoff = datetime(min_year, 1, 1).date()
     stage_ranges = _load_stage_ranges()
     out = []
@@ -556,7 +565,7 @@ def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) 
             continue
         if d < cutoff:
             continue
-        if today <= d <= end:
+        if period_start <= d <= period_end:
             out.append({
                 "date": d.isoformat(),
                 "title": ev.get("title", "Событие"),
@@ -575,7 +584,7 @@ def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) 
             continue
         if d < cutoff:
             continue
-        if today <= d <= end:
+        if period_start <= d <= period_end:
             desc = p.get("description", "")
             expected = (p.get("expected_result") or "").strip()
             out.append({
@@ -586,29 +595,28 @@ def _load_all_grant_and_kkt_events(days_ahead: int = 365, min_year: int = 2026) 
                 "source": "kkt",
                 "stage": _get_stage_for_date(d, stage_ranges),
             })
-    # События из этапов (активности с plan_start/plan_end)
+    # События из этапов (активности с plan_start/plan_end — одна дата на активность: plan_end или plan_start)
     data = _load_grant_dashboard_data()
     for s in (data.get("stages") or []):
         stage_name = (s.get("stage") or "").strip()
         activity = (s.get("activity") or "").strip()
-        for key in ("plan_end", "plan_start"):
-            date_s = (s.get(key) or "").strip()[:10]
-            if not date_s or not activity:
-                continue
-            try:
-                d = datetime.strptime(date_s, "%Y-%m-%d").date()
-            except ValueError:
-                continue
-            if d < cutoff or d < today or d > end:
-                continue
-            out.append({
-                "date": d.isoformat(),
-                "title": activity,
-                "description": f"Этап: {stage_name}",
-                "address": "",
-                "source": "stage",
-                "stage": stage_name,
-            })
+        date_s = (s.get("plan_end") or s.get("plan_start") or "").strip()[:10]
+        if not date_s or not activity:
+            continue
+        try:
+            d = datetime.strptime(date_s, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if d < cutoff or d < period_start or d > period_end:
+            continue
+        out.append({
+            "date": d.isoformat(),
+            "title": activity,
+            "description": f"Этап: {stage_name}",
+            "address": "",
+            "source": "stage",
+            "stage": stage_name,
+        })
     out.sort(key=lambda x: (x["date"], x["title"]))
     return out
 
@@ -1033,16 +1041,20 @@ def _settings_calendar_month(block_id: str) -> None:
 
 
 def _content_calendar_month(block_id: str) -> None:
-    events = _load_schedule_events()
-    today = datetime.utcnow().date()
-    year = _get("dashboard_calendar_month_year", today.year)
-    month = _get("dashboard_calendar_month_month", today.month)
+    """Календарь месяца с раскраской дней по этапам (Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый)."""
+    import calendar as cal_mod
+    year = _get("dashboard_calendar_month_year", datetime.utcnow().year)
+    month = _get("dashboard_calendar_month_month", datetime.utcnow().month)
     min_year = _get("dashboard_calendar_month_min_year", 2026)
+    first = datetime(year, month, 1).date()
+    last_day = cal_mod.monthrange(year, month)[1]
+    last = datetime(year, month, last_day).date()
+    events = _load_all_grant_and_kkt_events(min_year=min_year, start_date=first, end_date=last)
     min_date = datetime(min_year, 1, 1).date()
     import calendar
     cal = calendar.Calendar(firstweekday=0)
     weeks = cal.monthdayscalendar(year, month)
-    events_by_day: dict[int, list[str]] = {}
+    events_by_day: dict[int, list[dict]] = {}
     for ev in events:
         try:
             d = datetime.fromisoformat(ev["date"].replace("Z", "")).date()
@@ -1051,22 +1063,31 @@ def _content_calendar_month(block_id: str) -> None:
         if d < min_date:
             continue
         if d.year == year and d.month == month:
-            events_by_day.setdefault(d.day, []).append(ev.get("title", "Событие"))
+            events_by_day.setdefault(d.day, []).append(ev)
     weekdays = "Пн Вт Ср Чт Пт Сб Вс".split()
-    header = " | ".join(weekdays)
     st.caption(f"**{year}, {month}**")
-    lines = [header]
+    # Таблица: цвет фона ячейки по этапу первого события в этот день
+    cells_html = []
     for week in weeks:
-        row = []
         for day in week:
             if day == 0:
-                row.append("  ")
+                cells_html.append('<td class="cal-empty"></td>')
             else:
-                mark = "•" if day in events_by_day else " "
-                row.append(f"{day:2}{mark}")
-        lines.append(" | ".join(row))
-    st.text("\n".join(lines))
-    st.caption("• — день с событием. Список событий по дням — в блоке «Ближайшие сроки».")
+                evs = events_by_day.get(day, [])
+                stage = evs[0].get("stage", "") if evs else ""
+                bg = STAGE_BG_COLORS.get(stage, "transparent")
+                mark = "•" if evs else ""
+                style = f"background-color:{bg};" if bg != "transparent" else ""
+                cells_html.append(f'<td class="cal-day" style="{style}">{day}{mark}</td>')
+    rows = []
+    for i in range(0, len(cells_html), 7):
+        rows.append("<tr>" + "".join(cells_html[i : i + 7]) + "</tr>")
+    table_html = "<table class=\"cal-table\"><thead><tr>" + "".join(f"<th>{w}</th>" for w in weekdays) + "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    st.markdown(
+        f'<style>.cal-table {{ border-collapse: collapse; font-size: 0.9rem; }} .cal-table td, .cal-table th {{ border: 1px solid #ddd; padding: 0.35rem 0.5rem; text-align: center; }} .cal-empty {{ background: #fafafa; }} .cal-day {{ border-radius: 4px; }}</style>{table_html}',
+        unsafe_allow_html=True,
+    )
+    st.caption("• — день с событием. Цвет: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый. Список — в «Ближайшие сроки» и «Календарь Нейропульс».")
 
 
 def block_calendar_month() -> None:
