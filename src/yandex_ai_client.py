@@ -52,9 +52,7 @@ def get_yandex_ai_config() -> dict:
     instructions = yandex_cfg.get("instructions") or ""
     vector_store_id = (os.getenv("YANDEX_VECTOR_STORE_ID") or yandex_cfg.get("vector_store_id") or "").strip()
     base_url = (os.getenv("YANDEX_AI_BASE_URL") or api_cfg.get("base_url") or "").strip() or YANDEX_AI_BASE_URL
-    # Для вызова по agent_id (Conversations API) нужен rest-assistant, иначе API возвращает пустой output_text
-    if agent_id and (not base_url or base_url.rstrip("/") == YANDEX_AI_BASE_URL.rstrip("/")):
-        base_url = REST_ASSISTANT_BASE_URL
+    # Не переключаем на rest-assistant: при agent_id в URI там 400 Failed to get model; используем ai.api с URI модели (см. ask_in_conversation).
 
     return {
         "api_key": api_key,
@@ -200,9 +198,10 @@ def ask_in_conversation(
     except Exception:
         pass
     # #endregion
-    # На rest-assistant в URI должна быть модель (deepseek-v32/latest и т.д.), не agent_id — иначе 400 Failed to get model
-    use_rest = "rest-assistant" in (cfg.get("base_url") or "")
-    model_spec = (cfg["model"] or "deepseek-v32/latest") if use_rest else (cfg["agent_id"] or cfg["model"])
+    # В Conversations API с agent_id в URI ai.api возвращал пустой output; rest-assistant даёт 400 Failed to get model. Используем URI модели + instructions + tools на ai.api.
+    model_spec = cfg["agent_id"] or cfg["model"]
+    if cfg["agent_id"]:
+        model_spec = cfg["model"] or "deepseek-v32/latest"
     model_uri = f"gpt://{cfg['folder_id']}/{model_spec}"
     instr = instructions if instructions is not None else cfg["instructions"]
     tools = _tools_for_vector_store(cfg.get("vector_store_id") or "")
