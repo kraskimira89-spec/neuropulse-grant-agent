@@ -22,12 +22,17 @@ def get_parser_config() -> dict[str, Any]:
         load_dotenv(PROJECT_ROOT / ".env")
     except ImportError:
         pass
-    telegram_channels = parser_cfg.get("telegram_channels") or []
-    if isinstance(telegram_channels, str):
-        telegram_channels = [s.strip() for s in telegram_channels.split(",") if s.strip()]
-    disk_public_links = parser_cfg.get("disk_public_links") or []
-    if isinstance(disk_public_links, str):
-        disk_public_links = [s.strip() for s in disk_public_links.split(",") if s.strip()]
+    telegram_channels_raw = parser_cfg.get("telegram_channels") or []
+    if isinstance(telegram_channels_raw, str):
+        telegram_channels_raw = [s.strip() for s in telegram_channels_raw.split(",") if s.strip()]
+    # Каждый элемент может быть «url название» — берём только первый токен (URL) для парсера
+    telegram_channels = [s.split()[0] for s in telegram_channels_raw if s.strip()]
+
+    disk_public_links_raw = parser_cfg.get("disk_public_links") or []
+    if isinstance(disk_public_links_raw, str):
+        disk_public_links_raw = [s.strip() for s in disk_public_links_raw.split(",") if s.strip()]
+    # Аналогично для ссылок Диска
+    disk_public_links = [s.split()[0] for s in disk_public_links_raw if s.strip()]
     vector_store_id = (
         os.getenv("YANDEX_VECTOR_STORE_ID")
         or parser_cfg.get("vector_store_id")

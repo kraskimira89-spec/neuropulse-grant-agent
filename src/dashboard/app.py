@@ -67,20 +67,20 @@ STATUS_COLORS = {"not_started": "#888", "in_progress": "#d4a017", "done": "#28a7
 # Постельные оттенки карточек: (фон карточки, фон заголовка — чуть ярче)
 BLOCK_PALETTE: dict[str, tuple[str, str]] = {
     "grant_header":        ("#f0eeff", "#e2d9ff"),  # лаванда
-    "stages":              ("#e8f6ef", "#ceead9"),  # мята
+    "grant_stages":        ("#e8f6ef", "#ceead9"),  # мята
     "kkt":                 ("#fff2e8", "#ffe0c6"),  # персик
-    "budget":              ("#fefae6", "#fdf3c8"),  # масло
-    "indicators":          ("#e6f3ff", "#cce5ff"),  # небесно-голубой
+    "grant_budget":        ("#fefae6", "#fdf3c8"),  # масло
+    "grant_indicators":    ("#e6f3ff", "#cce5ff"),  # небесно-голубой
     "risks":               ("#fceaea", "#f9d2d2"),  # пудровый розовый
-    "info_activity":       ("#e6faf6", "#cbf0e8"),  # тиффани
+    "grant_info_activity": ("#e6faf6", "#cbf0e8"),  # тиффани
     "schedule":            ("#f0e8ff", "#e0d0ff"),  # сиреневый
     "calendar_month":      ("#e8f7ff", "#c9e9ff"),  # голубой
     "reminders":           ("#fff5e6", "#ffe9c8"),  # янтарный
-    "neuropulse_calendar": ("#e6f9ff", "#c8efff"),  # циан
+    "neuropulse_cal":      ("#e6f9ff", "#c8efff"),  # циан
     "audit":               ("#eef5e8", "#daecd0"),  # шалфей
     "agent_stats":         ("#fce8f5", "#f8d0ec"),  # орхидея
     "status":              ("#eaf1f8", "#d2e4f2"),  # стальной
-    "chat_and_tools":      ("#fef6e8", "#faead0"),  # кремовый
+    "tools":               ("#fef6e8", "#faead0"),  # кремовый
     "contacts":            ("#ede8fa", "#ddd0f6"),  # пыльно-сиреневый
     "notifications":       ("#fff8e6", "#ffedc8"),  # медовый
     "communications":      ("#e8f8f0", "#c8f0da"),  # морской
@@ -952,34 +952,95 @@ def _save_parser_sources(channels: list[str], disk_links: list[str]) -> tuple[bo
         return False, str(e)
 
 
-def _settings_parser(block_id: str) -> None:
+def _load_parser_raw_sources() -> tuple[list[str], list[str]]:
+    """Читает сырые строки telegram_channels и disk_public_links из config.json (с сохранёнными названиями)."""
     try:
-        from src.parser import get_parser_config
-        cfg = get_parser_config()
-    except ImportError:
-        cfg = {}
+        from src.agent_api_client import CONFIG_PATH, load_config
+        path = CONFIG_PATH
+        if path.exists():
+            with open(path, encoding="utf-8") as f:
+                config = json.load(f)
+        else:
+            config = load_config()
+        p = config.get("parser") or {}
+        tg = p.get("telegram_channels") or []
+        disk = p.get("disk_public_links") or []
+        if isinstance(tg, str):
+            tg = [s.strip() for s in tg.split(",") if s.strip()]
+        if isinstance(disk, str):
+            disk = [s.strip() for s in disk.split(",") if s.strip()]
+        return list(tg), list(disk)
+    except Exception:
+        return [], []
 
-    channels = cfg.get("telegram_channels") or []
-    disk_links = cfg.get("disk_public_links") or []
 
+def _settings_parser(block_id: str) -> None:
+    channels_raw, disk_raw = _load_parser_raw_sources()
+
+    # ── Telegram-каналы ────────────────────────────────────────
     st.markdown("#### 📱 Telegram-каналы")
-    st.caption("Один канал на строку: `@username`, `https://t.me/channel` или `https://t.me/c/ID`.")
+    st.caption(
+        "Один канал на строку. После ссылки можно добавить название через пробел:\n\n"
+        "`@channel` · `https://t.me/channel Название` · `https://t.me/c/ID Описание`"
+    )
+
+    # Превью текущих каналов в виде таблицы
+    if channels_raw:
+        rows_html = ""
+        for line in channels_raw:
+            parts = line.split(None, 1)
+            url = parts[0] if parts else line
+            name = parts[1] if len(parts) > 1 else "—"
+            rows_html += (
+                f'<tr><td style="font-family:monospace;font-size:12px;padding:4px 8px;'
+                f'color:#1565c0;word-break:break-all">{url}</td>'
+                f'<td style="padding:4px 8px;font-size:12px;color:#475569">{name}</td></tr>'
+            )
+        st.markdown(
+            f'<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:6px">'
+            f'<thead><tr><th style="text-align:left;padding:5px 8px;background:#f8fafc;font-size:11px;color:#64748b">Ссылка / канал</th>'
+            f'<th style="text-align:left;padding:5px 8px;background:#f8fafc;font-size:11px;color:#64748b">Название</th></tr></thead>'
+            f'<tbody>{rows_html}</tbody></table>',
+            unsafe_allow_html=True,
+        )
+
     tg_text = st.text_area(
         "Каналы Telegram",
-        value="\n".join(channels),
-        height=120,
-        placeholder="@mychannel\nhttps://t.me/other_channel",
+        value="\n".join(channels_raw),
+        height=130,
+        placeholder="@mychannel\nhttps://t.me/other_channel НКО Победители\nhttps://t.me/c/3847911347 Гранты ЯНАО",
         key=f"parser_tg_input_{block_id}",
         label_visibility="collapsed",
     )
 
+    # ── Ссылки Яндекс.Диска ────────────────────────────────────
     st.markdown("#### 📁 Ссылки Яндекс.Диска")
-    st.caption("Один URL на строку: публичная папка или файл с Яндекс.Диска.")
+    st.caption("Один URL на строку. Можно добавить название: `https://disk.yandex.ru/d/xxx Документы проекта`")
+
+    if disk_raw:
+        rows_html = ""
+        for line in disk_raw:
+            parts = line.split(None, 1)
+            url = parts[0] if parts else line
+            name = parts[1] if len(parts) > 1 else "—"
+            rows_html += (
+                f'<tr><td style="font-family:monospace;font-size:12px;padding:4px 8px;'
+                f'color:#1565c0;word-break:break-all">{url}</td>'
+                f'<td style="padding:4px 8px;font-size:12px;color:#475569">{name}</td></tr>'
+            )
+        st.markdown(
+            f'<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:6px">'
+            f'<thead><tr><th style="text-align:left;padding:5px 8px;background:#f8fafc;font-size:11px;color:#64748b">Ссылка</th>'
+            f'<th style="text-align:left;padding:5px 8px;background:#f8fafc;font-size:11px;color:#64748b">Название</th></tr></thead>'
+            f'<tbody>{rows_html}</tbody></table>',
+            unsafe_allow_html=True,
+        )
+
     disk_text = st.text_area(
         "Ссылки Диска",
-        value="\n".join(disk_links),
+        value="\n".join(disk_raw),
         height=90,
-        placeholder="https://disk.yandex.ru/d/xxxxx",
+        placeholder="https://disk.yandex.ru/d/xxxxx Документы гранта",
         key=f"parser_disk_input_{block_id}",
         label_visibility="collapsed",
     )
@@ -990,6 +1051,7 @@ def _settings_parser(block_id: str) -> None:
         ok, msg = _save_parser_sources(new_channels, new_disk)
         if ok:
             st.success(msg)
+            st.rerun()
         else:
             st.error(f"Ошибка сохранения: {msg}")
 
