@@ -1788,7 +1788,7 @@ def _content_contacts(block_id: str) -> None:
     if key_contacts not in st.session_state:
         rows = []
         for c in contacts:
-            r = {"✓": False, "Имя": (c.get("name") or "").strip() or "", "Роль": (c.get("role") or "").strip() or "", "Email": (c.get("email") or "").strip() or "", "Макс.": (c.get("chat_link") or c.get("max_chat") or "").strip() or ""}
+            r = {"Имя": (c.get("name") or "").strip() or "", "Роль": (c.get("role") or "").strip() or "", "Email": (c.get("email") or "").strip() or "", "Макс.": (c.get("chat_link") or c.get("max_chat") or "").strip() or ""}
             if has_phone:
                 r["Телефон"] = (c.get("phone") or "").strip() or ""
             rows.append(r)
@@ -1807,7 +1807,6 @@ def _content_contacts(block_id: str) -> None:
     rows = st.session_state[key_contacts]
 
     col_config = {
-        "✓": st.column_config.CheckboxColumn("✓", width="small", help="Отметьте строки для действия"),
         "Имя": st.column_config.TextColumn("Имя", width="medium"),
         "Роль": st.column_config.TextColumn("Роль", width="medium"),
         "Email": st.column_config.TextColumn("Email", width="medium"),
@@ -1815,15 +1814,11 @@ def _content_contacts(block_id: str) -> None:
     }
     if has_phone:
         col_config["Телефон"] = st.column_config.TextColumn("Телефон", width="medium")
-    col_order = ["✓", "Имя", "Роль", "Email", "Макс."]
-    if has_phone:
-        col_order.append("Телефон")
     edited = st.data_editor(
         rows,
         width="stretch",
         hide_index=True,
         column_config=col_config,
-        column_order=col_order,
         key="contacts_data_editor",
         num_rows="dynamic",
     )
@@ -1835,12 +1830,12 @@ def _content_contacts(block_id: str) -> None:
             st.session_state["dashboard_contacts_has_phone"] = True
             ordered = []
             for r in st.session_state[key_contacts]:
-                ordered.append({"✓": r.get("✓", False), "Имя": r.get("Имя", ""), "Роль": r.get("Роль", ""), "Email": r.get("Email", ""), "Макс.": r.get("Макс.", ""), "Телефон": r.get("Телефон", "")})
+                ordered.append({"Имя": r.get("Имя", ""), "Роль": r.get("Роль", ""), "Email": r.get("Email", ""), "Макс.": r.get("Макс.", ""), "Телефон": r.get("Телефон", "")})
             st.session_state[key_contacts] = ordered
             st.rerun()
     with btn_col2:
         if st.button("➕ Добавить строку", key="contacts_add_row"):
-            new_row = {"✓": False, "Имя": "", "Роль": "", "Email": "", "Макс.": ""}
+            new_row = {"Имя": "", "Роль": "", "Email": "", "Макс.": ""}
             if st.session_state.get("dashboard_contacts_has_phone"):
                 new_row["Телефон"] = ""
             st.session_state[key_contacts].append(new_row)
@@ -1849,8 +1844,6 @@ def _content_contacts(block_id: str) -> None:
         if st.button("💾 Сохранить в файл", key="contacts_save", type="primary"):
             to_save = []
             for r in edited:
-                if r.get("✓"):
-                    continue
                 rec = {"name": (r.get("Имя") or "").strip(), "role": (r.get("Роль") or "").strip(), "email": (r.get("Email") or "").strip()}
                 chat_link = (r.get("Макс.") or "").strip()
                 if chat_link:
@@ -1874,36 +1867,6 @@ def _content_contacts(block_id: str) -> None:
             )
             st.rerun()
 
-    # Кнопка «Удалить»: удаляются строки, отмеченные галочкой «✓»
-    current = st.session_state[key_contacts]
-    marked = sum(1 for r in current if r.get("✓"))
-    if current:
-        if st.button("🗑 Удалить", key="contacts_delete_btn"):
-            if marked == 0:
-                st.warning("Отметьте в таблице строки для удаления (столбец «✓»).")
-            else:
-                new_rows = [r for r in current if not r.get("✓")]
-                for r in new_rows:
-                    r["✓"] = False
-                st.session_state[key_contacts] = new_rows
-                to_save = []
-                for r in new_rows:
-                    rec = {"name": (r.get("Имя") or "").strip(), "role": (r.get("Роль") or "").strip(), "email": (r.get("Email") or "").strip()}
-                    chat_link = (r.get("Макс.") or "").strip()
-                    if chat_link:
-                        rec["chat_link"] = chat_link
-                    if st.session_state.get("dashboard_contacts_has_phone"):
-                        rec["phone"] = (r.get("Телефон") or "").strip()
-                    to_save.append(rec)
-                try:
-                    CONTACTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-                    with open(CONTACTS_PATH, "w", encoding="utf-8") as f:
-                        json.dump(to_save, f, ensure_ascii=False, indent=2)
-                except Exception:
-                    pass
-                st.rerun()
-        elif marked > 0:
-            st.caption(f"Отмечено: {marked} стр. Нажмите «🗑 Удалить» для удаления.")
 
 
 def block_contacts() -> None:
