@@ -193,7 +193,16 @@ def ask_in_conversation(
     При 404 (сессия не найдена) создаёт новую сессию, сохраняет её и повторяет запрос один раз.
     """
     client, cfg = get_client()
-    model_spec = cfg["agent_id"] or cfg["model"]
+    # #region agent log
+    try:
+        _log_path = PROJECT_ROOT / "debug-b70e7d.log"
+        open(_log_path, "a", encoding="utf-8").write(json.dumps({"sessionId": "b70e7d", "hypothesisId": "H5b", "location": "yandex_ai_client:ask_in_conversation", "message": "client cfg", "data": {"base_url_host": "rest-assistant" if "rest-assistant" in (cfg.get("base_url") or "") else "other", "agent_id_set": bool(cfg.get("agent_id"))}, "timestamp": __import__("time").time() * 1000}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    # На rest-assistant в URI должна быть модель (deepseek-v32/latest и т.д.), не agent_id — иначе 400 Failed to get model
+    use_rest = "rest-assistant" in (cfg.get("base_url") or "")
+    model_spec = (cfg["model"] or "deepseek-v32/latest") if use_rest else (cfg["agent_id"] or cfg["model"])
     model_uri = f"gpt://{cfg['folder_id']}/{model_spec}"
     instr = instructions if instructions is not None else cfg["instructions"]
     tools = _tools_for_vector_store(cfg.get("vector_store_id") or "")
@@ -217,11 +226,24 @@ def ask_in_conversation(
             _raise_403_folder_hint(e)
         if _is_conversation_not_found(e):
             logger.warning("Сессия %s не найдена (404), создаём новую.", conversation_id[:16])
+            # #region agent log
+            try:
+                open(PROJECT_ROOT / "debug-b70e7d.log", "a", encoding="utf-8").write(json.dumps({"sessionId": "b70e7d", "hypothesisId": "H4", "location": "yandex_ai_client:404_retry", "message": "conversation not found, created new", "data": {"used_rest_assistant": "rest-assistant" in (cfg.get("base_url") or "")}, "timestamp": __import__("time").time() * 1000}) + "\n")
+            except Exception:
+                pass
+            # #endregion
             new_id = create_conversation()
             save_session_id(new_id)
             response = _do_request(new_id)
         else:
             raise
+
+    err = getattr(response, "error", None)
+    if err is not None and getattr(response, "status", None) == "failed":
+        msg = getattr(err, "message", None) or str(err)
+        code = getattr(err, "code", None) or ""
+        logger.warning("Ответ API с ошибкой: status=failed, error=%s", msg)
+        return f"Ошибка API ({code}): {msg}"
 
     text = getattr(response, "output_text", None)
     if not (text and str(text).strip()):
