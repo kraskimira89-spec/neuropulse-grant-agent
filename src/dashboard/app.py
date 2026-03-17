@@ -1217,7 +1217,7 @@ def _settings_neuropulse_cal(block_id: str) -> None:
     st.session_state["dashboard_neuropulse_auto_sync"] = auto_sync
     st.caption("Показываются все события гранта и ККТ с метками [Грант] / [ККТ]. Виджет — календарь Яндекса. После синхронизации события отображаются в сетке календаря.")
     st.divider()
-    st.caption("**Синхронизация с Календарь Нейропульс:** события из grant_calendar.json и ККТ из grant_kkt.json (с 2026 г.). «Только добавить» — создаёт отсутствующие; «Полная синхронизация» — создаёт недостающие, обновляет изменённые и удаляет из календаря события, которых нет в локальных данных.")
+    st.caption("**Синхронизация с Календарь Нейропульс:** события гранта (grant_calendar.json), ККТ (grant_kkt.json) и даты начала/окончания этапов (grant_project_dashboard.json → stages). «Только добавить» — создаёт отсутствующие; «Полная синхронизация» — приводит календарь в соответствие с данными проекта.")
     if st.button("Только добавить события в календарь", key=f"btn_push_cal_{block_id}"):
         try:
             from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, get_yandex_calendar_config
@@ -1253,18 +1253,6 @@ def _content_neuropulse_cal(block_id: str) -> None:
         st.info("Модуль Яндекс Календаря недоступен.")
         return
     cfg = get_yandex_calendar_config()
-    # #region agent log
-    try:
-        _np = bool((cfg.get("neuropulse_calendar_url") or "").strip())
-        _emb = bool((cfg.get("neuropulse_embed_url") or "").strip())
-        _main = bool((cfg.get("calendar_url") or "").strip())
-        _used = "neuropulse" if _np else ("fallback_calendar" if _main else "none")
-        import json
-        with open("debug-7f0fda.log", "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"sessionId": "7f0fda", "hypothesisId": "A", "location": "dashboard _content_neuropulse_cal", "message": "neuropulse block URLs", "data": {"has_neuropulse_calendar_url": _np, "has_calendar_url": _main, "has_neuropulse_embed_url": _emb, "source_used_for_sync": _used}, "timestamp": __import__("time").time() * 1000}, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
     neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
     can_sync = bool(neuro_url and cfg.get("user") and cfg.get("password"))
@@ -1292,7 +1280,7 @@ def _content_neuropulse_cal(block_id: str) -> None:
         st.caption("Чтобы встроить виджет календаря, укажите **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** в config/.env (Экспорт → вставка на сайт в calendar.yandex.ru).")
 
     # Кнопки ручной синхронизации
-    st.caption("События гранта и ККТ выгружаются в календарь Нейропульс автоматически при открытии блока (если включено в настройках). Дубликаты не создаются.")
+    st.caption("События гранта, ККТ и даты этапов выгружаются в календарь Нейропульс при открытии блока (если включено) или по кнопке. Дубликаты не создаются.")
     try:
         from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, sync_grant_and_kkt_with_calendar, get_yandex_calendar_config
         cal_cfg = get_yandex_calendar_config()

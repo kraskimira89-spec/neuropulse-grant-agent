@@ -504,24 +504,16 @@ def push_grant_and_kkt_to_yandex_calendar(
     skip_existing: bool = True,
 ) -> tuple[int, int]:
     """
-    Загружает события из data/grant_calendar.json и data/grant_kkt.json (с 2026 года)
+    Загружает события из grant_calendar.json, grant_kkt.json и этапов гранта (grant_project_dashboard.json)
     и создаёт их в Яндекс.Календаре. Возвращает (создано, ошибок).
-    calendar_url — URL календаря; если не задан, берётся из конфига.
-    skip_existing — не создавать событие, если в календаре уже есть с той же датой и названием (без дубликатов).
+    Учитываются: события гранта, ККТ (date_end), даты начала/окончания этапов (plan_start, plan_end).
+    calendar_url — URL календаря (для Нейропульс передавайте neuropulse_calendar_url из конфига).
+    skip_existing — не создавать событие, если в календаре уже есть с той же датой и названием.
     """
     import json
     from datetime import timedelta
     cfg = get_yandex_calendar_config()
     url = (calendar_url or "").strip() or cfg.get("calendar_url") or cfg.get("neuropulse_calendar_url") or ""
-    # #region agent log
-    try:
-        _src = "param" if (calendar_url or "").strip() else ("cfg_calendar" if cfg.get("calendar_url") else "cfg_neuropulse")
-        import json
-        with open("debug-7f0fda.log", "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"sessionId": "7f0fda", "hypothesisId": "C", "location": "push_grant_and_kkt_to_yandex_calendar", "message": "push URL source", "data": {"url_source": _src, "has_url": bool(url)}, "timestamp": __import__("time").time() * 1000}, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
     if not url:
         logger.warning("push_grant_and_kkt_to_yandex_calendar: не задан calendar_url")
         return 0, 0
@@ -576,6 +568,37 @@ def push_grant_and_kkt_to_yandex_calendar(
                 title = f"ККТ: {desc}" if desc else "ККТ"
                 body = f"Ожидаемый результат: {expected}" if expected else ""
                 events_to_create.append((d, title, body, "", None, None, None))
+        except Exception as e:
+            logger.warning("Ошибка чтения %s: %s", path.name, e)
+        break
+    # Этапы гранта (grant_project_dashboard.json) — даты начала и окончания периодов
+    for path in (PROJECT_ROOT / "data" / "grant_project_dashboard.json", PROJECT_ROOT / "data" / "grant_project_dashboard.example.json"):
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            for s in (data.get("stages") or []):
+                stage = (s.get("stage") or "").strip()
+                activity = (s.get("activity") or "").strip()
+                start_s = (s.get("plan_start") or "").strip()[:10]
+                end_s = (s.get("plan_end") or "").strip()[:10]
+                if start_s:
+                    try:
+                        d = datetime.strptime(start_s, "%Y-%m-%d").date()
+                        if d >= cutoff:
+                            title = f"Этап: {stage} — {activity} (начало)" if activity else f"Этап: {stage} (начало)"
+                            events_to_create.append((d, title, f"Этап: {stage}", "", None, None, None))
+                    except ValueError:
+                        pass
+                if end_s and end_s != start_s:
+                    try:
+                        d = datetime.strptime(end_s, "%Y-%m-%d").date()
+                        if d >= cutoff:
+                            title = f"Этап: {stage} — {activity} (окончание)" if activity else f"Этап: {stage} (окончание)"
+                            events_to_create.append((d, title, f"Этап: {stage}", "", None, None, None))
+                    except ValueError:
+                        pass
         except Exception as e:
             logger.warning("Ошибка чтения %s: %s", path.name, e)
         break
@@ -669,6 +692,36 @@ def _load_local_events_for_sync() -> list[dict[str, Any]]:
         except Exception as e:
             logger.warning("Ошибка чтения %s: %s", path.name, e)
         break
+    # Этапы гранта (даты начала и окончания периодов)
+    for path in (PROJECT_ROOT / "data" / "grant_project_dashboard.json", PROJECT_ROOT / "data" / "grant_project_dashboard.example.json"):
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            for s in (data.get("stages") or []):
+                stage = (s.get("stage") or "").strip()
+                activity = (s.get("activity") or "").strip()
+                for label, date_key in (("начало", "plan_start"), ("окончание", "plan_end")):
+                    date_s = (s.get(date_key) or "").strip()[:10]
+                    if not date_s:
+                        continue
+                    try:
+                        d = datetime.strptime(date_s, "%Y-%m-%d").date()
+                    except ValueError:
+                        continue
+                    if d < cutoff:
+                        continue
+                    title = f"Этап: {stage} — {activity} ({label})" if activity else f"Этап: {stage} ({label})"
+                    out.append({
+                        "date": d.isoformat(),
+                        "title": title,
+                        "description": f"Этап: {stage}",
+                        "address": "",
+                    })
+        except Exception as e:
+            logger.warning("Ошибка чтения %s: %s", path.name, e)
+        break
     return out
 
 
@@ -685,15 +738,6 @@ def sync_grant_and_kkt_with_calendar(
     from datetime import timedelta
     cfg = get_yandex_calendar_config()
     url = (calendar_url or "").strip() or cfg.get("calendar_url") or cfg.get("neuropulse_calendar_url") or ""
-    # #region agent log
-    try:
-        _src = "param" if (calendar_url or "").strip() else ("cfg_calendar" if cfg.get("calendar_url") else "cfg_neuropulse")
-        import json
-        with open("debug-7f0fda.log", "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({"sessionId": "7f0fda", "hypothesisId": "C", "location": "sync_grant_and_kkt_with_calendar", "message": "sync URL source", "data": {"url_source": _src, "has_url": bool(url)}, "timestamp": __import__("time").time() * 1000}, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
     if not url or not cfg["user"] or not cfg["password"]:
         logger.warning("sync_grant_and_kkt_with_calendar: не задан calendar_url или учётные данные")
         return 0, 0, 0
