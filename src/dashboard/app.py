@@ -1223,7 +1223,7 @@ def block_risks() -> None:
     _block_with_settings("⚠️ Управление рисками", "risks", _content_risks, _settings_risks)
 
 
-# ---------- Блок: Статистика использования агента ----------
+# ---------- Блок: Статистика агента ----------
 def _settings_agent_stats(block_id: str) -> None:
     days = st.number_input("Период (дней назад)", min_value=1, max_value=365, value=_get("dashboard_agent_stats_days", 30), key=f"ni_agent_stats_days_{block_id}")
     st.session_state["dashboard_agent_stats_days"] = days
@@ -1275,7 +1275,7 @@ def _content_agent_stats(block_id: str) -> None:
 
 
 def block_agent_stats() -> None:
-    _block_with_settings("📈 Статистика использования агента", "agent_stats", _content_agent_stats, _settings_agent_stats)
+    _block_with_settings("📈 Статистика агента", "agent_stats", _content_agent_stats, _settings_agent_stats)
 
 
 # ---------- Блок: Настройки уведомлений ----------
@@ -2373,7 +2373,7 @@ def _get_block_registry() -> dict:
         "reminders": ("Напоминания", block_reminders),
         "neuropulse_calendar": ("Календарь Нейропульс", block_neuropulse_calendar),
         "audit": ("Аудит чата", block_audit),
-        "agent_stats": ("Статус агента", block_agent_stats),
+        "agent_stats": ("Статистика агента", block_agent_stats),
         "status": ("Настройки", block_status),
         "chat_and_tools": ("Диалог с агентом и быстрые действия", block_chat_and_tools),
         "contacts": ("Контакты по гранту", block_contacts),

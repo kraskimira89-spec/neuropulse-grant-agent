@@ -61,6 +61,23 @@
   padding-top: 0 !important;
 }
 
+/* Выравнивание верхних блоков: все строки с колонками — по верхнему краю (иначе правая колонка «проваливается» вниз) */
+.main [data-testid="stHorizontalBlock"] {
+  align-items: flex-start !important;
+}
+.main [data-testid="stColumn"] {
+  align-items: flex-start !important;
+  padding-top: 0 !important;
+}
+.main [data-testid="stColumn"] [data-testid="stVerticalBlock"]:has([class^="np-bm-"]):first-of-type {
+  margin-top: 0 !important;
+}
+/* Контейнер колонки (LayoutWrapper) — без лишнего отступа сверху */
+.main [data-testid="stColumn"] > div {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
 /* ── Заголовок страницы h1 (общий, не заголовок дашборда) ── */
 [data-testid="stMarkdown"] h1 {
   font-size: 26px !important;
