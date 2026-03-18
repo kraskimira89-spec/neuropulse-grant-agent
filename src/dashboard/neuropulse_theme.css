@@ -96,6 +96,21 @@
   margin-top: 0 !important;
   padding-top: 0 !important;
 }
+/* Правая колонка: подтянуть первый блок вверх, убрать gap/отступы у обёрток */
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child > div {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+  gap: 0 !important;
+  row-gap: 0 !important;
+}
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child [data-testid="stVerticalBlock"]:first-of-type {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
 
 /* ── Адаптивность: основные колонки стекаются на узком экране, блоки подтянуты друг к другу ── */
 @media (max-width: 900px) {
