@@ -581,11 +581,23 @@ def block_kkt() -> None:
 
 
 # Цвета фона для событий по этапам (Блок 1/2/3) в календаре
+# Маппинг: ключ — подстрока для поиска в названии этапа (режим «содержит»)
 STAGE_BG_COLORS = {
-    "Блок 1: Подготовительный": "#e3f2fd",
-    "Блок 2: Основной": "#e8f5e9",
-    "Блок 3: Завершающий": "#fff3e0",
+    "Подготовительный": "#e3f2fd",
+    "Основной": "#e8f5e9",
+    "Завершающий": "#fff3e0",
 }
+
+
+def _get_stage_bg_color(stage: str) -> str:
+    """Возвращает цвет фона для этапа. Ищет подстроку в названии этапа (устойчиво к «Блок 1: Подготовительный» vs «Подготовительный»)."""
+    if not stage:
+        return "transparent"
+    stage_lower = stage.lower()
+    for key, color in STAGE_BG_COLORS.items():
+        if key.lower() in stage_lower:
+            return color
+    return "transparent"
 
 
 def _load_stage_ranges() -> list[tuple[str, str, str]]:
@@ -1367,7 +1379,7 @@ def _content_calendar_month(block_id: str) -> None:
             else:
                 evs = events_by_day.get(day, [])
                 stage = evs[0].get("stage", "") if evs else ""
-                bg = STAGE_BG_COLORS.get(stage, "transparent")
+                bg = _get_stage_bg_color(stage)
                 mark = "•" if evs else ""
                 style = f"background-color:{bg};" if bg != "transparent" else ""
                 cells_html.append(f'<td class="cal-day" style="{style}">{day}{mark}</td>')
@@ -1398,8 +1410,24 @@ def _settings_neuropulse_cal(block_id: str) -> None:
     st.session_state["dashboard_neuropulse_auto_sync"] = auto_sync
     st.caption("Показываются все события гранта и ККТ с метками [Грант] / [ККТ]. Виджет — календарь Яндекса. После синхронизации события отображаются в сетке календаря.")
     st.divider()
-    st.caption("**Синхронизация с Календарь Нейропульс:** события гранта (grant_calendar.json), ККТ (grant_kkt.json) и даты начала/окончания этапов (grant_project_dashboard.json → stages). «Только добавить» — создаёт отсутствующие; «Полная синхронизация» — приводит календарь в соответствие с данными проекта.")
-    if st.button("Только добавить события в календарь", key=f"btn_push_cal_{block_id}"):
+    st.caption("**Синхронизация:** события гранта (grant_calendar.json), ККТ (grant_kkt.json) и даты этапов (grant_project_dashboard.json).")
+    if st.button("Проверить подключение к CalDAV", key=f"btn_test_caldav_{block_id}", help="Проверяет доступ к календарю по YANDEX_CALENDAR_*."):
+        try:
+            from src.yandex_calendar_client import fetch_existing_event_keys, get_yandex_calendar_config
+            cfg = get_yandex_calendar_config()
+            url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
+            if not url or not cfg.get("user") or not cfg.get("password"):
+                st.error("Задайте YANDEX_CALENDAR_NEUROPULSE_URL, YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в config/.env.")
+            else:
+                today = datetime.utcnow().date()
+                _, ok = fetch_existing_event_keys(url, today, today)
+                if ok:
+                    st.success("Подключение к CalDAV успешно.")
+                else:
+                    st.warning("Не удалось загрузить события (сеть или доступ).")
+        except Exception as e:
+            st.error(f"Ошибка: {e}")
+    if st.button("Синхронизировать с календарём", key=f"btn_push_cal_{block_id}", help="Добавляет отсутствующие события. Дубликаты не создаются."):
         try:
             from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, get_yandex_calendar_config
             cfg = get_yandex_calendar_config()
@@ -1407,24 +1435,11 @@ def _settings_neuropulse_cal(block_id: str) -> None:
             if not url:
                 st.error("Задайте YANDEX_CALENDAR_NEUROPULSE_URL или YANDEX_CALENDAR_URL в config/.env.")
             else:
-                created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=url)
+                created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=url, skip_existing=True)
                 st.success(f"Создано событий: {created}. Ошибок: {errors}. Обновите виджет календаря или calendar.yandex.ru.")
                 st.rerun()
         except Exception as e:
-            st.error(f"Ошибка выгрузки: {e}")
-    if st.button("Полная синхронизация (добавить / обновить / удалить по локальным данным)", key=f"btn_full_sync_cal_{block_id}"):
-        try:
-            from src.yandex_calendar_client import sync_grant_and_kkt_with_calendar, get_yandex_calendar_config
-            cfg = get_yandex_calendar_config()
-            url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
-            if not url:
-                st.error("Задайте YANDEX_CALENDAR_NEUROPULSE_URL или YANDEX_CALENDAR_URL в config/.env.")
-            else:
-                created, updated, deleted = sync_grant_and_kkt_with_calendar(calendar_url=url)
-                st.success(f"Создано: {created}, обновлено: {updated}, удалено: {deleted}. Обновите виджет календаря или calendar.yandex.ru.")
-                st.rerun()
-        except Exception as e:
-            st.error(f"Ошибка полной синхронизации: {e}")
+            st.error(f"Ошибка: {e}")
 
 
 def _content_neuropulse_cal(block_id: str) -> None:
@@ -1443,10 +1458,11 @@ def _content_neuropulse_cal(block_id: str) -> None:
         try:
             created, _errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url, skip_existing=True)
             st.session_state["neuropulse_auto_synced"] = True
+            st.session_state["neuropulse_auto_sync_failed"] = False
             if created > 0:
                 st.rerun()
         except Exception:
-            st.session_state["neuropulse_auto_synced"] = True
+            st.session_state["neuropulse_auto_sync_failed"] = True
 
     # Виджет календаря Яндекса (если задан embed URL).
     # Если в embed_url нет layer_ids, извлекаем ID из neuropulse_calendar_url и добавляем.
@@ -1472,23 +1488,35 @@ def _content_neuropulse_cal(block_id: str) -> None:
         st.caption("Чтобы встроить виджет календаря, укажите **YANDEX_CALENDAR_NEUROPULSE_EMBED_URL** в config/.env (Экспорт → вставка на сайт в calendar.yandex.ru).")
 
     # Кнопки ручной синхронизации
-    st.caption("События гранта, ККТ и даты этапов выгружаются в календарь Нейропульс при открытии блока (если включено) или по кнопке. Дубликаты не создаются.")
+    if st.session_state.get("neuropulse_auto_sync_failed"):
+        st.warning("⚠️ Автосинхронизация не выполнилась. Нажмите «Синхронизировать», чтобы повторить.")
+    st.caption("События гранта, ККТ и даты этапов выгружаются в календарь при открытии блока (если включено) или по кнопке. Дубликаты не создаются.")
     try:
         from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, sync_grant_and_kkt_with_calendar, get_yandex_calendar_config
         cal_cfg = get_yandex_calendar_config()
         neuro_url = (cal_cfg.get("neuropulse_calendar_url") or cal_cfg.get("calendar_url") or "").strip()
         if neuro_url and cal_cfg.get("user") and cal_cfg.get("password"):
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Только добавить в календарь", key="btn_sync_neuropulse_content", type="primary"):
-                    created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url)
+            if st.button("Синхронизировать с календарём", key="btn_sync_neuropulse_content", type="primary", help="Добавляет отсутствующие события гранта и ККТ в Календарь Нейропульс. Существующие не дублируются."):
+                try:
+                    created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url, skip_existing=True)
+                    st.session_state["neuropulse_auto_synced"] = True
+                    st.session_state["neuropulse_auto_sync_failed"] = False
                     st.success(f"Добавлено событий: {created}. Ошибок: {errors}. Обновите виджет выше или calendar.yandex.ru.")
                     st.rerun()
-            with col2:
-                if st.button("Полная синхронизация", key="btn_full_sync_neuropulse_content"):
-                    created, updated, deleted = sync_grant_and_kkt_with_calendar(calendar_url=neuro_url)
-                    st.success(f"Создано: {created}, обновлено: {updated}, удалено: {deleted}. Обновите виджет выше или calendar.yandex.ru.")
-                    st.rerun()
+                except Exception as e:
+                    st.session_state["neuropulse_auto_sync_failed"] = True
+                    st.error(f"Ошибка синхронизации: {e}")
+            with st.expander("Полная синхронизация (добавить / обновить / удалить по локальным данным)"):
+                if st.button("Выполнить полную синхронизацию", key="btn_full_sync_neuropulse_content"):
+                    try:
+                        created, updated, deleted = sync_grant_and_kkt_with_calendar(calendar_url=neuro_url)
+                        st.session_state["neuropulse_auto_synced"] = True
+                        st.session_state["neuropulse_auto_sync_failed"] = False
+                        st.success(f"Создано: {created}, обновлено: {updated}, удалено: {deleted}. Обновите виджет выше или calendar.yandex.ru.")
+                        st.rerun()
+                    except Exception as e:
+                        st.session_state["neuropulse_auto_sync_failed"] = True
+                        st.error(f"Ошибка: {e}")
         else:
             st.caption("Задайте YANDEX_CALENDAR_NEUROPULSE_URL (или YANDEX_CALENDAR_URL), YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в .env для синхронизации.")
     except ImportError:
@@ -1498,6 +1526,8 @@ def _content_neuropulse_cal(block_id: str) -> None:
     # force_local=True — всегда из локальных файлов, не зависит от настройки источника «Яндекс Календарь».
     st.markdown("**📅 Все события гранта и ККТ** (отмечены в календаре после синхронизации)")
     st.caption("Цвет фона: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый.")
+    if _fetch_cal_failed:
+        st.warning("⚠️ Невозможно проверить календарь (сбой подключения). Значки ✓ могут быть неточными; кнопка ＋ добавляет событие.")
     days = _get("dashboard_neuropulse_days", 60)
     min_year = _get("dashboard_neuropulse_min_year", 2026)
     show_desc = _get("dashboard_neuropulse_show_desc", True)
@@ -1511,11 +1541,13 @@ def _content_neuropulse_cal(block_id: str) -> None:
     _add_cal_available = False
     _add_cal_neuro_url = ""
     _existing_cal_keys: set[tuple[str, str]] = set()
+    _fetch_cal_failed = False
     try:
         from src.yandex_calendar_client import (
             add_event_to_neuropulse_calendar as _add_ev,
             get_yandex_calendar_config as _gcfg,
             fetch_existing_event_keys as _fetch_existing_keys,
+            key_matches_existing as _key_matches,
         )
         _ncfg = _gcfg()
         _add_cal_neuro_url = (_ncfg.get("neuropulse_calendar_url") or _ncfg.get("calendar_url") or "").strip()
@@ -1531,9 +1563,13 @@ def _content_neuropulse_cal(block_id: str) -> None:
                 if dates_parsed:
                     from_date = min(dates_parsed)
                     to_date = max(dates_parsed)
-                    _existing_cal_keys = _fetch_existing_keys(_add_cal_neuro_url, from_date, to_date)
+                    keys, ok = _fetch_existing_keys(_add_cal_neuro_url, from_date, to_date)
+                    _existing_cal_keys = keys
+                    if not ok:
+                        _fetch_cal_failed = True
             except (ValueError, Exception):
                 _existing_cal_keys = set()
+                _fetch_cal_failed = True
     except ImportError:
         pass
 
@@ -1550,7 +1586,7 @@ def _content_neuropulse_cal(block_id: str) -> None:
         title = ev.get("title", "(без названия)")
         desc = (ev.get("description") or "").strip()
         addr = (ev.get("address") or "").strip()
-        bg_color = STAGE_BG_COLORS.get(stage, "transparent")
+        bg_color = _get_stage_bg_color(stage)
         badge_bg, badge_fg, badge_text = _BADGE_COLORS.get(source, ("#f5f5f5", "#333", source))
         days_left = (datetime.fromisoformat(d.replace("Z", "")).date() - today).days if d else 0
 
@@ -1588,7 +1624,7 @@ def _content_neuropulse_cal(block_id: str) -> None:
             btn_key = f"np_add_cal_{idx}_{d}"
             ok_key = f"np_add_cal_ok_{idx}_{d}"
             _key_norm = ((d or "")[:10], (title or "").strip().lower().replace("\n", " ").replace("  ", " ") or " ")
-            _already_in_cal = _key_norm in _existing_cal_keys
+            _already_in_cal = not _fetch_cal_failed and _key_matches(_key_norm, _existing_cal_keys)
             if st.session_state.get(ok_key) or _already_in_cal:
                 st.markdown("<strong>V</strong>" if _already_in_cal else "✅", unsafe_allow_html=True)
             elif _add_cal_available:

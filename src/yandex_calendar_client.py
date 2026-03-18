@@ -229,10 +229,12 @@ def fetch_calendar_events_with_urls(
     from_date: date | None = None,
     to_date: date | None = None,
     use_neuropulse_url: bool = False,
+    _out_errors: list | None = None,
 ) -> list[dict[str, Any]]:
     """
     Загружает события из календаря CalDAV с полями date, title, description, address, url (для удаления).
     url — URL календаря; если use_neuropulse_url=True, берётся neuropulse_calendar_url из конфига.
+    _out_errors — если передан, при сбое в него добавляется исключение (для вызова из fetch_existing_event_keys).
     """
     cfg = get_yandex_calendar_config()
     cal_url = (url or "").strip() or (
@@ -266,25 +268,58 @@ def fetch_calendar_events_with_urls(
         out.sort(key=lambda x: (x["date"], x["title"]))
         return out
     except Exception as e:
+        if _out_errors is not None:
+            _out_errors.append(e)
         logger.warning("Ошибка загрузки событий CalDAV %s: %s", cal_url[:50], e)
         return []
 
 
+def _normalize_title(title: str) -> str:
+    """Нормализует название: нижний регистр, без лишних пробелов."""
+    return (title or "").strip().lower().replace("\n", " ").replace("  ", " ") or " "
+
+
 def _normalize_key(d: date, title: str) -> tuple[str, str]:
-    """Ключ для сравнения: дата и нормализованное название (без лишних пробелов, нижний регистр)."""
-    return (d.isoformat(), (title or "").strip().lower().replace("\n", " ").replace("  ", " ") or " ")
+    """Ключ для сравнения: дата и нормализованное название."""
+    return (d.isoformat(), _normalize_title(title))
+
+
+def key_matches_existing(key: tuple[str, str], existing_keys: set[tuple[str, str]]) -> bool:
+    """
+    Проверяет, есть ли ключ в множестве (точное совпадение или мягкое).
+    Мягкое: та же дата + одна нормализованная строка содержит другую (мин. 4 символа).
+    """
+    if key in existing_keys:
+        return True
+    date_part, norm = key
+    if len(norm) < 4:
+        return False
+    for (d, t) in existing_keys:
+        if d != date_part:
+            continue
+        if len(t) < 4:
+            continue
+        if norm in t or t in norm:
+            return True
+    return False
 
 
 def fetch_existing_event_keys(
     calendar_url: str,
     from_date: date,
     to_date: date,
-) -> set[tuple[str, str]]:
+) -> tuple[set[tuple[str, str]], bool]:
     """
-    Загружает события из календаря за период и возвращает множество ключей (date_iso, title_normalized)
-    для проверки дубликатов перед созданием.
+    Загружает события из календаря за период и возвращает (множество ключей (date_iso, title_normalized), успех).
+    При сбое CalDAV возвращает (set(), False) и логирует ошибку.
     """
-    items = fetch_calendar_events_with_urls(url=calendar_url, from_date=from_date, to_date=to_date)
+    errors: list[Exception] = []
+    items = fetch_calendar_events_with_urls(
+        url=calendar_url, from_date=from_date, to_date=to_date, _out_errors=errors
+    )
+    if errors:
+        logger.warning("fetch_existing_event_keys: сбой проверки календаря — %s", errors[0])
+        return (set(), False)
     out = set()
     for x in items:
         d_str = (x.get("date") or "")[:10]
@@ -295,7 +330,7 @@ def fetch_existing_event_keys(
                 out.add(_normalize_key(d, title))
             except ValueError:
                 pass
-    return out
+    return (out, True)
 
 
 def delete_event(calendar_url: str, event_url: str) -> bool:
@@ -607,10 +642,10 @@ def push_grant_and_kkt_to_yandex_calendar(
         min_d = min(e[0] for e in events_to_create)
         max_d = max(e[0] for e in events_to_create)
         end_range = max_d + timedelta(days=365)
-        existing_keys = fetch_existing_event_keys(url, min_d, end_range)
+        existing_keys, _ = fetch_existing_event_keys(url, min_d, end_range)
     created, errors = 0, 0
     for d, title, desc, loc, uid, rrule, end_d in events_to_create:
-        if skip_existing and _normalize_key(d, title) in existing_keys:
+        if skip_existing and key_matches_existing(_normalize_key(d, title), existing_keys):
             continue
         ok, _ = create_event(url, d, title, desc, loc, uid=uid, rrule=rrule, end_date=end_d)
         if ok:
