@@ -107,14 +107,14 @@ def _inject_block_palette_css() -> None:
 [data-testid="stVerticalBlock"]:has([class^="np-bm-"]) {
   padding-top: 0px !important;
 }
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > div:first-child,
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stMarkdown"]:has([class^="np-bm-"]),
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stMarkdownContainer"]:has([class^="np-bm-"]) {
+/* Только сам маркер .np-bm-* — не скрываем родители, иначе пустой блок (календарь и др.) */
+[data-testid="stVerticalBlock"] [class^="np-bm-"] {
   margin: 0 !important;
   padding: 0 !important;
   height: 0 !important;
-  line-height: 0 !important;
+  min-height: 0 !important;
   overflow: hidden !important;
+  display: none !important;
 }
 [data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock,
 [data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] {
@@ -131,6 +131,8 @@ def _inject_block_palette_css() -> None:
   margin: 0 !important;
   padding: 0 !important;
   line-height: 1.3 !important;
+  font-size: 1.5rem !important;
+  font-weight: 600 !important;
 }
 """
     css = "\n".join(rules) + header_align_css
