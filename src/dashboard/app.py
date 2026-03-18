@@ -1448,11 +1448,12 @@ def _content_neuropulse_cal(block_id: str) -> None:
     except ImportError:
         st.info("Модуль Яндекс Календаря недоступен.")
         return
+    _fetch_cal_failed = False
+    _key_matches = lambda key, existing_keys: key in existing_keys
     cfg = get_yandex_calendar_config()
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
     neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
     can_sync = bool(neuro_url and cfg.get("user") and cfg.get("password"))
-    _fetch_cal_failed = False
 
     # Автосинхронизация: при первом открытии блока выгружаем события гранта и ККТ в календарь (без дубликатов)
     if _get("dashboard_neuropulse_auto_sync", True) and can_sync and not st.session_state.get("neuropulse_auto_synced"):
@@ -1540,7 +1541,6 @@ def _content_neuropulse_cal(block_id: str) -> None:
     _add_cal_available = False
     _add_cal_neuro_url = ""
     _existing_cal_keys: set[tuple[str, str]] = set()
-    _fetch_cal_failed = False
     try:
         from src.yandex_calendar_client import (
             add_event_to_neuropulse_calendar as _add_ev,
