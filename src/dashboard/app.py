@@ -1449,7 +1449,7 @@ def _content_neuropulse_cal(block_id: str) -> None:
         st.info("Модуль Яндекс Календаря недоступен.")
         return
     _fetch_cal_failed = False
-    _key_matches = lambda key, existing_keys: key in existing_keys
+    _event_matches = lambda d, title, existing_keys: False
     cfg = get_yandex_calendar_config()
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
     neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
@@ -1545,8 +1545,8 @@ def _content_neuropulse_cal(block_id: str) -> None:
         from src.yandex_calendar_client import (
             add_event_to_neuropulse_calendar as _add_ev,
             get_yandex_calendar_config as _gcfg,
+            event_matches_existing as _event_matches,
             fetch_existing_event_keys as _fetch_existing_keys,
-            key_matches_existing as _key_matches,
         )
         _ncfg = _gcfg()
         _add_cal_neuro_url = (_ncfg.get("neuropulse_calendar_url") or _ncfg.get("calendar_url") or "").strip()
@@ -1624,8 +1624,8 @@ def _content_neuropulse_cal(block_id: str) -> None:
         with btn_col:
             btn_key = f"np_add_cal_{idx}_{d}"
             ok_key = f"np_add_cal_ok_{idx}_{d}"
-            _key_norm = ((d or "")[:10], (title or "").strip().lower().replace("\n", " ").replace("  ", " ") or " ")
-            _already_in_cal = not _fetch_cal_failed and _key_matches(_key_norm, _existing_cal_keys)
+            _event_date = datetime.fromisoformat(d.replace("Z", "")).date()
+            _already_in_cal = not _fetch_cal_failed and _event_matches(_event_date, title or "", _existing_cal_keys)
             if st.session_state.get(ok_key) or _already_in_cal:
                 st.markdown("<strong>V</strong>" if _already_in_cal else "✅", unsafe_allow_html=True)
             elif _add_cal_available:

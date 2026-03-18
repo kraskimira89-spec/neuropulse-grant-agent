@@ -301,9 +301,14 @@ def _normalize_title(title: str) -> str:
     return (title or "").strip().lower().replace("\n", " ").replace("  ", " ") or " "
 
 
-def _normalize_key(d: date, title: str) -> tuple[str, str]:
-    """Ключ для сравнения: дата и нормализованное название."""
+def normalize_event_key(d: date, title: str) -> tuple[str, str]:
+    """Возвращает единый ключ события: дата и нормализованное название."""
     return (d.isoformat(), _normalize_title(title))
+
+
+def _normalize_key(d: date, title: str) -> tuple[str, str]:
+    """Совместимость со старым именем функции."""
+    return normalize_event_key(d, title)
 
 
 def _title_tokens(title: str) -> set[str]:
@@ -352,6 +357,11 @@ def key_matches_existing(key: tuple[str, str], existing_keys: set[tuple[str, str
         if len(short) >= 10 and short in long and ratio >= thresholds["substring_ratio_min"]:
             return True
     return False
+
+
+def event_matches_existing(d: date, title: str, existing_keys: set[tuple[str, str]]) -> bool:
+    """Проверяет наличие события по дате и названию без раскрытия формата ключа снаружи."""
+    return key_matches_existing(normalize_event_key(d, title), existing_keys)
 
 
 def fetch_existing_event_keys(
