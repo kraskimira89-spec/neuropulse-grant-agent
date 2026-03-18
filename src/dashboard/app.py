@@ -140,53 +140,18 @@ def _inject_block_palette_css() -> None:
 
 
 def _block_header(title: str, block_id: str) -> bool:
-    """Заголовок блока: название и шестерёнка. Если контекст раскладки задан, показываем название + стрелки + шестерёнку в одну строку."""
+    """Заголовок блока: название и шестерёнка (настройки). Перемещение блоков — только в экспандере «Расположение блоков»."""
     key_open = f"dashboard_settings_{block_id}"
     if key_open not in st.session_state:
         st.session_state[key_open] = False
 
-    has_layout_context = "dashboard_current_block" in st.session_state
-    if has_layout_context:
-        ctx = st.session_state.get("dashboard_current_block", {})
-        side = ctx.get("side", "left")
-        index = ctx.get("index", 0)
-        total = ctx.get("total", 1)
-        left_ids, right_ids = _load_dashboard_layout()
-        col_title, c0, c1, c2, c3, c_gear = st.columns([4, 1, 1, 1, 1, 1])
-        with col_title:
-            st.subheader(title)
-        with c0:
-            if st.button("←", key=f"arr_l_{block_id}", help="В левую колонку", disabled=(side != "right")):
-                _apply_block_move("left", block_id, side, index, total, left_ids, right_ids)
-                _save_dashboard_layout(left_ids, right_ids)
-                st.rerun()
-        with c1:
-            if st.button("↑", key=f"arr_u_{block_id}", help="Выше", disabled=(index <= 0)):
-                _apply_block_move("up", block_id, side, index, total, left_ids, right_ids)
-                _save_dashboard_layout(left_ids, right_ids)
-                st.rerun()
-        with c2:
-            if st.button("↓", key=f"arr_d_{block_id}", help="Ниже", disabled=(index >= total - 1)):
-                _apply_block_move("down", block_id, side, index, total, left_ids, right_ids)
-                _save_dashboard_layout(left_ids, right_ids)
-                st.rerun()
-        with c3:
-            if st.button("→", key=f"arr_r_{block_id}", help="В правую колонку", disabled=(side != "left")):
-                _apply_block_move("right", block_id, side, index, total, left_ids, right_ids)
-                _save_dashboard_layout(left_ids, right_ids)
-                st.rerun()
-        with c_gear:
-            if st.button("⚙️", key=f"gear_{block_id}", help="Настройки блока"):
-                st.session_state[key_open] = not st.session_state[key_open]
-                st.rerun()
-    else:
-        col1, col2 = st.columns([5, 1])
-        with col1:
-            st.subheader(title)
-        with col2:
-            if st.button("⚙️", key=f"gear_{block_id}", help="Настройки блока"):
-                st.session_state[key_open] = not st.session_state[key_open]
-                st.rerun()
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        st.subheader(title)
+    with col2:
+        if st.button("⚙️", key=f"gear_{block_id}", help="Настройки блока"):
+            st.session_state[key_open] = not st.session_state[key_open]
+            st.rerun()
     return st.session_state[key_open]
 
 

@@ -87,13 +87,26 @@
   padding-top: 0 !important;
 }
 
-/* ── Адаптивность: только основные колонки дашборда (левая/правая с блоками) стекаются на узком экране ── */
-/* Селектор по маркеру np-dashboard-columns-marker: не задеваем заголовок и экспандер «Расположение блоков» */
+/* ── Область основных колонок: выравнивание по верхнему краю независимо от контента ── */
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] {
+  align-self: flex-start !important;
+}
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] [data-testid="stVerticalBlock"]:first-child,
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] > div > [data-testid="stVerticalBlock"]:first-child {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* ── Адаптивность: основные колонки стекаются на узком экране, блоки подтянуты друг к другу ── */
 @media (max-width: 900px) {
+  .main .block-container {
+    padding-top: 6px !important;
+  }
   .main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 0 !important;
+    margin-top: 0 !important;
   }
   .main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {
     width: 100% !important;
@@ -101,6 +114,17 @@
     min-width: 0 !important;
     flex: 0 0 auto !important;
     align-self: stretch !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+  /* Вторая колонка (правая) при стеке — минимальный отступ сверху, блоки «подтянуты» друг к другу */
+  .main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child {
+    margin-top: 0.5rem !important;
+  }
+  .main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] [data-testid="stVerticalBlock"]:first-child,
+  .main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] > div > [data-testid="stVerticalBlock"]:first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
   }
 }
 @media (max-width: 576px) {
