@@ -77,6 +77,15 @@
   padding-top: 0 !important;
   margin-top: 0 !important;
 }
+/* Убираем верхний отступ у первого блока в каждой колонке (Streamlit иногда даёт padding через обёртку) */
+.main [data-testid="stColumn"] [data-testid="stVerticalBlock"]:first-child {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+.main [data-testid="stColumn"] > div > [data-testid="stVerticalBlock"]:first-child {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
 
 /* ── Заголовок страницы h1 (общий, не заголовок дашборда) ── */
 [data-testid="stMarkdown"] h1 {

@@ -137,6 +137,38 @@ def _inject_block_palette_css() -> None:
 """
     css = "\n".join(rules) + header_align_css
     st.markdown(f'<style id="np-block-palette">\n{css}\n</style>', unsafe_allow_html=True)
+    # #region agent log — DOM probe for column alignment debugging
+    st.markdown("""<script>
+(function() {
+  function probe() {
+    var cols = document.querySelectorAll('[data-testid="stColumn"]');
+    if (!cols || cols.length < 2) { setTimeout(probe, 800); return; }
+    var rows = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
+    var data = {cols: [], rows: []};
+    cols.forEach(function(c, i) {
+      var cs = window.getComputedStyle(c);
+      var rect = c.getBoundingClientRect();
+      data.cols.push({i:i, top:rect.top, paddingTop:cs.paddingTop, marginTop:cs.marginTop, alignItems:cs.alignItems, className:c.className.substring(0,80)});
+      var firstChild = c.firstElementChild;
+      if (firstChild) {
+        var fcs = window.getComputedStyle(firstChild);
+        var frect = firstChild.getBoundingClientRect();
+        data.cols[i].firstChild = {tag:firstChild.tagName, className:firstChild.className.substring(0,80), top:frect.top, paddingTop:fcs.paddingTop, marginTop:fcs.marginTop};
+      }
+    });
+    rows.forEach(function(r, i) {
+      var cs = window.getComputedStyle(r);
+      data.rows.push({i:i, alignItems:cs.alignItems, className:r.className.substring(0,80)});
+    });
+    fetch('http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362', {
+      method:'POST', headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b70e7d'},
+      body: JSON.stringify({sessionId:'b70e7d',hypothesisId:'DOM-PROBE',location:'app.py:palette_css',message:'column DOM probe',data:data,timestamp:Date.now()})
+    }).catch(function(){});
+  }
+  setTimeout(probe, 1500);
+})();
+</script>""", unsafe_allow_html=True)
+    # #endregion
 
 
 def _block_header(title: str, block_id: str) -> bool:
