@@ -19,6 +19,12 @@ from src.agent_api_client import load_config, PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 YANDEX_CALDAV_URL = "https://caldav.yandex.ru"
+DEFAULT_EVENT_MATCH_THRESHOLDS = {
+    "exact_ratio": 0.92,
+    "token_overlap": 0.8,
+    "token_ratio_min": 0.6,
+    "substring_ratio_min": 0.55,
+}
 
 
 def _load_dotenv() -> None:
@@ -49,6 +55,20 @@ def get_yandex_calendar_config() -> dict[str, str]:
             os.getenv("YANDEX_CALENDAR_NEUROPULSE_EMBED_URL") or cal_cfg.get("neuropulse_embed_url") or ""
         ).strip(),
     }
+
+
+def _get_event_match_thresholds() -> dict[str, float]:
+    """Читает пороги мягкого сравнения событий из config.yandex_calendar.event_match."""
+    cfg = load_config()
+    cal_cfg = cfg.get("yandex_calendar", {}) or {}
+    raw = cal_cfg.get("event_match", {}) or {}
+    out: dict[str, float] = {}
+    for key, default_value in DEFAULT_EVENT_MATCH_THRESHOLDS.items():
+        try:
+            out[key] = float(raw.get(key, default_value))
+        except (TypeError, ValueError):
+            out[key] = default_value
+    return out
 
 
 def is_configured() -> bool:
@@ -303,6 +323,7 @@ def key_matches_existing(key: tuple[str, str], existing_keys: set[tuple[str, str
     """
     if key in existing_keys:
         return True
+    thresholds = _get_event_match_thresholds()
     date_part, norm = key
     if len(norm) < 4:
         return False
@@ -317,18 +338,18 @@ def key_matches_existing(key: tuple[str, str], existing_keys: set[tuple[str, str
             return True
 
         ratio = SequenceMatcher(None, norm, t).ratio()
-        if ratio >= 0.92:
+        if ratio >= thresholds["exact_ratio"]:
             return True
 
         t_tokens = _title_tokens(t)
         if norm_tokens and t_tokens:
             common = len(norm_tokens & t_tokens)
             overlap = common / min(len(norm_tokens), len(t_tokens))
-            if overlap >= 0.8 and ratio >= 0.6:
+            if overlap >= thresholds["token_overlap"] and ratio >= thresholds["token_ratio_min"]:
                 return True
 
         short, long = (norm, t) if len(norm) <= len(t) else (t, norm)
-        if len(short) >= 10 and short in long and ratio >= 0.55:
+        if len(short) >= 10 and short in long and ratio >= thresholds["substring_ratio_min"]:
             return True
     return False
 

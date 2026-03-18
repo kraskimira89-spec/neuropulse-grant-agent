@@ -30,7 +30,13 @@
     "app_password": "",
     "calendar_url": "",
     "neuropulse_calendar_url": "",
-    "neuropulse_embed_url": ""
+    "neuropulse_embed_url": "",
+    "event_match": {
+      "exact_ratio": 0.92,
+      "token_overlap": 0.8,
+      "token_ratio_min": 0.6,
+      "substring_ratio_min": 0.55
+    }
   },
   "calendar_tools": [
     {
