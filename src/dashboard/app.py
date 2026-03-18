@@ -1577,11 +1577,30 @@ def _content_neuropulse_cal(block_id: str) -> None:
     # Проверяем доступность синхронизации для кнопок «+ Календарь»
     _add_cal_available = False
     _add_cal_neuro_url = ""
+    _existing_cal_keys: set[tuple[str, str]] = set()
     try:
-        from src.yandex_calendar_client import add_event_to_neuropulse_calendar as _add_ev, get_yandex_calendar_config as _gcfg
+        from src.yandex_calendar_client import (
+            add_event_to_neuropulse_calendar as _add_ev,
+            get_yandex_calendar_config as _gcfg,
+            fetch_existing_event_keys as _fetch_existing_keys,
+        )
         _ncfg = _gcfg()
         _add_cal_neuro_url = (_ncfg.get("neuropulse_calendar_url") or _ncfg.get("calendar_url") or "").strip()
         _add_cal_available = bool(_add_cal_neuro_url and _ncfg.get("user") and _ncfg.get("password"))
+        # События, уже лежащие в календаре Нейропульс — показываем ✓ вместо +
+        if _add_cal_available and events:
+            try:
+                dates_parsed = []
+                for e in events:
+                    ds = (e.get("date") or "")[:10]
+                    if ds:
+                        dates_parsed.append(datetime.strptime(ds, "%Y-%m-%d").date())
+                if dates_parsed:
+                    from_date = min(dates_parsed)
+                    to_date = max(dates_parsed)
+                    _existing_cal_keys = _fetch_existing_keys(_add_cal_neuro_url, from_date, to_date)
+            except (ValueError, Exception):
+                _existing_cal_keys = set()
     except ImportError:
         pass
 
@@ -1635,8 +1654,10 @@ def _content_neuropulse_cal(block_id: str) -> None:
         with btn_col:
             btn_key = f"np_add_cal_{idx}_{d}"
             ok_key = f"np_add_cal_ok_{idx}_{d}"
-            if st.session_state.get(ok_key):
-                st.markdown("✅", unsafe_allow_html=True)
+            _key_norm = ((d or "")[:10], (title or "").strip().lower().replace("\n", " ").replace("  ", " ") or " ")
+            _already_in_cal = _key_norm in _existing_cal_keys
+            if st.session_state.get(ok_key) or _already_in_cal:
+                st.markdown("<strong>V</strong>" if _already_in_cal else "✅", unsafe_allow_html=True)
             elif _add_cal_available:
                 if st.button("＋", key=btn_key, help=f"Добавить «{title}» в Календарь Нейропульс"):
                     try:
