@@ -41,11 +41,27 @@
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
   color: var(--np-text-primary);
   max-width: 1600px;
-  padding: 20px 28px !important;
+  padding: 10px 28px 20px !important;  /* меньше сверху — заголовок дашборда выше */
 }
 
-/* ── Заголовок страницы h1 ──────────────────────────────── */
-h1,
+/* ── Заголовок дашборда (как заголовки блоков: крупно, по одной строке с кнопкой) ── */
+.main .block-container h1,
+.main [data-testid="stMarkdown"] h1:first-of-type {
+  font-size: 1.5rem !important;
+  font-weight: 600 !important;
+  color: var(--np-text-primary) !important;
+  letter-spacing: -0.4px;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.3 !important;
+}
+/* убираем лишний отступ у первой строки (заголовок + кнопка) */
+.main .block-container > div:first-child {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* ── Заголовок страницы h1 (общий, не заголовок дашборда) ── */
 [data-testid="stMarkdown"] h1 {
   font-size: 26px !important;
   font-weight: 700 !important;
