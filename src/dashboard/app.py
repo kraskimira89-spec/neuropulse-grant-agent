@@ -137,29 +137,6 @@ def _inject_block_palette_css() -> None:
 """
     css = "\n".join(rules) + header_align_css
     st.markdown(f'<style id="np-block-palette">\n{css}\n</style>', unsafe_allow_html=True)
-    # #region agent log — align-self verification (Python-side)
-    import json as _json, time as _time
-    from pathlib import Path as _Path
-    _log = _Path(__file__).parent.parent.parent / "debug-b70e7d.log"
-    _theme_path = _Path(__file__).resolve().parent / "neuropulse_theme.css"
-    try:
-        _theme_css = _theme_path.read_text(encoding="utf-8")
-    except Exception:
-        _theme_css = ""
-    _info = {
-        "sessionId": "b70e7d", "hypothesisId": "ALIGN-SELF",
-        "location": "app.py:_inject_block_palette_css",
-        "message": "CSS loaded — align-self check",
-        "data": {
-            "theme_has_align_self": "align-self: flex-start" in _theme_css,
-            "theme_has_stColumn_rule": ".main [data-testid=\"stColumn\"]" in _theme_css,
-            "header_align_css_has_stColumn": ".main [data-testid=\"stColumn\"]" in header_align_css,
-        },
-        "timestamp": int(_time.time() * 1000)
-    }
-    with open(_log, "a", encoding="utf-8") as _lf:
-        _lf.write(_json.dumps(_info) + "\n")
-    # #endregion
 
 
 def _block_header(title: str, block_id: str) -> bool:
@@ -2634,40 +2611,12 @@ def main() -> None:
     st.session_state["dashboard_layout_right"] = right_ids
 
     registry = _get_block_registry()
+    # Маркер для CSS: только основные колонки дашборда стекаются на узком экране (не заголовок и не экспандер)
+    st.markdown(
+        '<div class="np-dashboard-columns-marker" aria-hidden="true" style="height:0;overflow:hidden;margin:0;padding:0;line-height:0;"></div>',
+        unsafe_allow_html=True,
+    )
     col1, col2 = st.columns(2)
-    # #region agent log — DOM probe via components.v1.html (iframe, same-origin srcdoc)
-    import streamlit.components.v1 as _stc
-    _stc.html("""<script>
-setTimeout(function() {
-  try {
-    var doc = window.parent.document;
-    var cols = doc.querySelectorAll('[data-testid="stColumn"]');
-    var parts = [];
-    cols.forEach(function(c, i) {
-      if (i > 7) return;
-      var r = c.getBoundingClientRect();
-      var cs = window.parent.getComputedStyle(c);
-      parts.push(i + '~t' + Math.round(r.top) + '~l' + Math.round(r.left) + '~pt' + cs.paddingTop + '~mt' + cs.marginTop + '~as' + cs.alignSelf);
-      var fc = c.firstElementChild;
-      if (fc) {
-        var fcs = window.parent.getComputedStyle(fc);
-        var fr = fc.getBoundingClientRect();
-        parts.push(i + 'fc~t' + Math.round(fr.top) + '~pt' + fcs.paddingTop + '~mt' + fcs.marginTop);
-      }
-    });
-    var hbs = doc.querySelectorAll('[data-testid="stHorizontalBlock"]');
-    hbs.forEach(function(r, i) {
-      if (i > 3) return;
-      var cs = window.parent.getComputedStyle(r);
-      parts.push('hb' + i + '~ai' + cs.alignItems + '~gap' + (cs.gap||'') + '~t' + Math.round(r.getBoundingClientRect().top));
-    });
-    new Image().src = 'http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362?sid=b70e7d&h=DOM&d=' + encodeURIComponent(parts.join('|'));
-  } catch(e) {
-    new Image().src = 'http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362?sid=b70e7d&h=ERR&msg=' + encodeURIComponent(e.message);
-  }
-}, 4000);
-</script>""", height=0)
-    # #endregion
 
     with col1:
         for i, bid in enumerate(left_ids):
