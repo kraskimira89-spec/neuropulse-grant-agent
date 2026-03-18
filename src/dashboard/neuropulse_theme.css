@@ -87,27 +87,21 @@
   padding-top: 0 !important;
 }
 
-/* ── Область основных колонок: выравнивание по верхнему краю независимо от контента ── */
-.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] {
+/* ── Основные колонки дашборда: ЛЕВАЯ И ПРАВАЯ — одинаковые отступы сверху ── */
+/* Обе колонки независимы, один и тот же набор правил для первой и второй */
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
   align-self: flex-start !important;
-}
-.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] [data-testid="stVerticalBlock"]:first-child,
-.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stColumn"] > div > [data-testid="stVerticalBlock"]:first-child {
-  margin-top: 0 !important;
-  padding-top: 0 !important;
-}
-/* Правая колонка: подтянуть первый блок вверх, убрать gap/отступы у обёрток */
-.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {
   padding-top: 0 !important;
   margin-top: 0 !important;
 }
-.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child > div {
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > div {
   padding-top: 0 !important;
   margin-top: 0 !important;
   gap: 0 !important;
   row-gap: 0 !important;
 }
-.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child [data-testid="stVerticalBlock"]:first-of-type {
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] [data-testid="stVerticalBlock"]:first-child,
+.main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > div > [data-testid="stVerticalBlock"]:first-child {
   margin-top: 0 !important;
   padding-top: 0 !important;
 }

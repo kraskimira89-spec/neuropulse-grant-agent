@@ -116,12 +116,13 @@ def _inject_block_palette_css() -> None:
   overflow: hidden !important;
   display: none !important;
 }
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock,
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] {
+/* Только заголовок блока (строка title+кнопки): не задеваем основные колонки дашборда — используем > (прямой потомок) */
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > .stHorizontalBlock,
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] {
   align-items: center !important;
 }
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock > [data-testid="stColumn"],
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > .stHorizontalBlock > [data-testid="stColumn"],
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
   justify-content: center !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
