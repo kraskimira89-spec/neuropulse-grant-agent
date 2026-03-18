@@ -137,37 +137,28 @@ def _inject_block_palette_css() -> None:
 """
     css = "\n".join(rules) + header_align_css
     st.markdown(f'<style id="np-block-palette">\n{css}\n</style>', unsafe_allow_html=True)
-    # #region agent log — DOM probe for column alignment debugging
-    st.markdown("""<script>
-(function() {
-  function probe() {
-    var cols = document.querySelectorAll('[data-testid="stColumn"]');
-    if (!cols || cols.length < 2) { setTimeout(probe, 800); return; }
-    var rows = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
-    var data = {cols: [], rows: []};
-    cols.forEach(function(c, i) {
-      var cs = window.getComputedStyle(c);
-      var rect = c.getBoundingClientRect();
-      data.cols.push({i:i, top:rect.top, paddingTop:cs.paddingTop, marginTop:cs.marginTop, alignItems:cs.alignItems, className:c.className.substring(0,80)});
-      var firstChild = c.firstElementChild;
-      if (firstChild) {
-        var fcs = window.getComputedStyle(firstChild);
-        var frect = firstChild.getBoundingClientRect();
-        data.cols[i].firstChild = {tag:firstChild.tagName, className:firstChild.className.substring(0,80), top:frect.top, paddingTop:fcs.paddingTop, marginTop:fcs.marginTop};
-      }
-    });
-    rows.forEach(function(r, i) {
-      var cs = window.getComputedStyle(r);
-      data.rows.push({i:i, alignItems:cs.alignItems, className:r.className.substring(0,80)});
-    });
-    fetch('http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362', {
-      method:'POST', headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b70e7d'},
-      body: JSON.stringify({sessionId:'b70e7d',hypothesisId:'DOM-PROBE',location:'app.py:palette_css',message:'column DOM probe',data:data,timestamp:Date.now()})
-    }).catch(function(){});
-  }
-  setTimeout(probe, 1500);
-})();
-</script>""", unsafe_allow_html=True)
+    # #region agent log — align-self verification (Python-side)
+    import json as _json, time as _time
+    from pathlib import Path as _Path
+    _log = _Path(__file__).parent.parent.parent / "debug-b70e7d.log"
+    _theme_path = _Path(__file__).resolve().parent / "neuropulse_theme.css"
+    try:
+        _theme_css = _theme_path.read_text(encoding="utf-8")
+    except Exception:
+        _theme_css = ""
+    _info = {
+        "sessionId": "b70e7d", "hypothesisId": "ALIGN-SELF",
+        "location": "app.py:_inject_block_palette_css",
+        "message": "CSS loaded — align-self check",
+        "data": {
+            "theme_has_align_self": "align-self: flex-start" in _theme_css,
+            "theme_has_stColumn_rule": ".main [data-testid=\"stColumn\"]" in _theme_css,
+            "header_align_css_has_stColumn": ".main [data-testid=\"stColumn\"]" in header_align_css,
+        },
+        "timestamp": int(_time.time() * 1000)
+    }
+    with open(_log, "a", encoding="utf-8") as _lf:
+        _lf.write(_json.dumps(_info) + "\n")
     # #endregion
 
 
@@ -2644,6 +2635,45 @@ def main() -> None:
 
     registry = _get_block_registry()
     col1, col2 = st.columns(2)
+    # #region agent log — DOM probe via st.html (same-origin, no CORS)
+    st.html("""<script>
+(function() {
+  function probe() {
+    var cols = document.querySelectorAll('[data-testid="stColumn"]');
+    if (!cols || cols.length < 2) { setTimeout(probe, 800); return; }
+    var data = {cols: [], rows: []};
+    cols.forEach(function(c, i) {
+      if (i > 3) return;
+      var cs = window.getComputedStyle(c);
+      var rect = c.getBoundingClientRect();
+      data.cols.push({i: i, top: Math.round(rect.top), paddingTop: cs.paddingTop, marginTop: cs.marginTop, alignSelf: cs.alignSelf});
+      var fc = c.firstElementChild;
+      if (fc) {
+        var fcs = window.getComputedStyle(fc);
+        data.cols[data.cols.length - 1].fc = {tag: fc.tagName, testid: (fc.getAttribute('data-testid') || ''), top: Math.round(fc.getBoundingClientRect().top), pt: fcs.paddingTop, mt: fcs.marginTop, alignSelf: fcs.alignSelf};
+        var fc2 = fc.firstElementChild;
+        if (fc2) {
+          var fcs2 = window.getComputedStyle(fc2);
+          data.cols[data.cols.length - 1].fc2 = {tag: fc2.tagName, testid: (fc2.getAttribute('data-testid') || ''), top: Math.round(fc2.getBoundingClientRect().top), pt: fcs2.paddingTop, mt: fcs2.marginTop};
+        }
+      }
+    });
+    var rows = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
+    rows.forEach(function(r, i) {
+      if (i > 3) return;
+      var cs = window.getComputedStyle(r);
+      data.rows.push({i: i, alignItems: cs.alignItems, pt: cs.paddingTop, mt: cs.marginTop, top: Math.round(r.getBoundingClientRect().top)});
+    });
+    fetch('http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b70e7d'},
+      body: JSON.stringify({sessionId: 'b70e7d', hypothesisId: 'DOM-STHTML', location: 'app.py:st.html', message: 'DOM probe', data: data, timestamp: Date.now()})
+    }).catch(function() {});
+  }
+  setTimeout(probe, 3000);
+})();
+</script>""")
+    # #endregion
 
     with col1:
         for i, bid in enumerate(left_ids):

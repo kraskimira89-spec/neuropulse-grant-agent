@@ -61,23 +61,23 @@
   padding-top: 0 !important;
 }
 
-/* Выравнивание верхних блоков: все строки с колонками — по верхнему краю (иначе правая колонка «проваливается» вниз) */
+/* Выравнивание верхних блоков: все строки с колонками — по верхнему краю */
 .main [data-testid="stHorizontalBlock"] {
   align-items: flex-start !important;
 }
+/* align-self: flex-start — критично! Если Streamlit ставит align-self:stretch на stColumn,
+   родительский align-items не помогает; нужен явный align-self на самом элементе */
 .main [data-testid="stColumn"] {
+  align-self: flex-start !important;
   align-items: flex-start !important;
   padding-top: 0 !important;
-}
-.main [data-testid="stColumn"] [data-testid="stVerticalBlock"]:has([class^="np-bm-"]):first-of-type {
   margin-top: 0 !important;
 }
-/* Контейнер колонки (LayoutWrapper) — без лишнего отступа сверху */
+/* Убираем отступ у всех прямых обёрток внутри колонки */
 .main [data-testid="stColumn"] > div {
   padding-top: 0 !important;
   margin-top: 0 !important;
 }
-/* Убираем верхний отступ у первого блока в каждой колонке (Streamlit иногда даёт padding через обёртку) */
 .main [data-testid="stColumn"] [data-testid="stVerticalBlock"]:first-child {
   margin-top: 0 !important;
   padding-top: 0 !important;
