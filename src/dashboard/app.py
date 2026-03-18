@@ -2635,7 +2635,7 @@ def main() -> None:
 
     registry = _get_block_registry()
     col1, col2 = st.columns(2)
-    # #region agent log — DOM probe via st.html (same-origin, no CORS)
+    # #region agent log — DOM probe (no-cors to bypass CORS preflight)
     st.html("""<script>
 (function() {
   function probe() {
@@ -2643,36 +2643,39 @@ def main() -> None:
     if (!cols || cols.length < 2) { setTimeout(probe, 800); return; }
     var data = {cols: [], rows: []};
     cols.forEach(function(c, i) {
-      if (i > 3) return;
+      if (i > 5) return;
       var cs = window.getComputedStyle(c);
       var rect = c.getBoundingClientRect();
-      data.cols.push({i: i, top: Math.round(rect.top), paddingTop: cs.paddingTop, marginTop: cs.marginTop, alignSelf: cs.alignSelf});
+      var entry = {i:i, top:Math.round(rect.top), pt:cs.paddingTop, mt:cs.marginTop, as:cs.alignSelf, ai:cs.alignItems, w:Math.round(rect.width)};
       var fc = c.firstElementChild;
       if (fc) {
         var fcs = window.getComputedStyle(fc);
-        data.cols[data.cols.length - 1].fc = {tag: fc.tagName, testid: (fc.getAttribute('data-testid') || ''), top: Math.round(fc.getBoundingClientRect().top), pt: fcs.paddingTop, mt: fcs.marginTop, alignSelf: fcs.alignSelf};
-        var fc2 = fc.firstElementChild;
-        if (fc2) {
-          var fcs2 = window.getComputedStyle(fc2);
-          data.cols[data.cols.length - 1].fc2 = {tag: fc2.tagName, testid: (fc2.getAttribute('data-testid') || ''), top: Math.round(fc2.getBoundingClientRect().top), pt: fcs2.paddingTop, mt: fcs2.marginTop};
+        entry.fc = {tag:fc.tagName, tid:(fc.getAttribute('data-testid')||''), top:Math.round(fc.getBoundingClientRect().top), pt:fcs.paddingTop, mt:fcs.marginTop};
+        var ch = fc.children;
+        entry.fc_children = ch.length;
+        if (ch.length > 0) {
+          var f2 = ch[0];
+          var f2s = window.getComputedStyle(f2);
+          entry.fc2 = {tag:f2.tagName, tid:(f2.getAttribute('data-testid')||''), top:Math.round(f2.getBoundingClientRect().top), pt:f2s.paddingTop, mt:f2s.marginTop, gap:f2s.gap||f2s.rowGap||''};
         }
       }
+      data.cols.push(entry);
     });
-    var rows = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
-    rows.forEach(function(r, i) {
+    var hbs = document.querySelectorAll('.main [data-testid="stHorizontalBlock"]');
+    hbs.forEach(function(r, i) {
       if (i > 3) return;
       var cs = window.getComputedStyle(r);
-      data.rows.push({i: i, alignItems: cs.alignItems, pt: cs.paddingTop, mt: cs.marginTop, top: Math.round(r.getBoundingClientRect().top)});
+      data.rows.push({i:i, ai:cs.alignItems, gap:cs.gap||cs.columnGap||'', top:Math.round(r.getBoundingClientRect().top)});
     });
     fetch('http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b70e7d'},
-      body: JSON.stringify({sessionId: 'b70e7d', hypothesisId: 'DOM-STHTML', location: 'app.py:st.html', message: 'DOM probe', data: data, timestamp: Date.now()})
-    }).catch(function() {});
+      method:'POST', mode:'no-cors',
+      headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({sessionId:'b70e7d',hypothesisId:'DOM-NOCORS',location:'app.py:st.html',message:'DOM probe',data:data,timestamp:Date.now()})
+    }).catch(function(e){ document.title='PROBE_ERR:'+e; });
   }
-  setTimeout(probe, 3000);
+  setTimeout(probe, 4000);
 })();
-</script>""")
+</script>""", unsafe_allow_javascript=True)
     # #endregion
 
     with col1:
