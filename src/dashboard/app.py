@@ -2635,47 +2635,38 @@ def main() -> None:
 
     registry = _get_block_registry()
     col1, col2 = st.columns(2)
-    # #region agent log — DOM probe (no-cors to bypass CORS preflight)
-    st.html("""<script>
-(function() {
-  function probe() {
-    var cols = document.querySelectorAll('[data-testid="stColumn"]');
-    if (!cols || cols.length < 2) { setTimeout(probe, 800); return; }
-    var data = {cols: [], rows: []};
+    # #region agent log — DOM probe via components.v1.html (iframe, same-origin srcdoc)
+    import streamlit.components.v1 as _stc
+    _stc.html("""<script>
+setTimeout(function() {
+  try {
+    var doc = window.parent.document;
+    var cols = doc.querySelectorAll('[data-testid="stColumn"]');
+    var parts = [];
     cols.forEach(function(c, i) {
-      if (i > 5) return;
-      var cs = window.getComputedStyle(c);
-      var rect = c.getBoundingClientRect();
-      var entry = {i:i, top:Math.round(rect.top), pt:cs.paddingTop, mt:cs.marginTop, as:cs.alignSelf, ai:cs.alignItems, w:Math.round(rect.width)};
+      if (i > 7) return;
+      var r = c.getBoundingClientRect();
+      var cs = window.parent.getComputedStyle(c);
+      parts.push(i + '~t' + Math.round(r.top) + '~l' + Math.round(r.left) + '~pt' + cs.paddingTop + '~mt' + cs.marginTop + '~as' + cs.alignSelf);
       var fc = c.firstElementChild;
       if (fc) {
-        var fcs = window.getComputedStyle(fc);
-        entry.fc = {tag:fc.tagName, tid:(fc.getAttribute('data-testid')||''), top:Math.round(fc.getBoundingClientRect().top), pt:fcs.paddingTop, mt:fcs.marginTop};
-        var ch = fc.children;
-        entry.fc_children = ch.length;
-        if (ch.length > 0) {
-          var f2 = ch[0];
-          var f2s = window.getComputedStyle(f2);
-          entry.fc2 = {tag:f2.tagName, tid:(f2.getAttribute('data-testid')||''), top:Math.round(f2.getBoundingClientRect().top), pt:f2s.paddingTop, mt:f2s.marginTop, gap:f2s.gap||f2s.rowGap||''};
-        }
+        var fcs = window.parent.getComputedStyle(fc);
+        var fr = fc.getBoundingClientRect();
+        parts.push(i + 'fc~t' + Math.round(fr.top) + '~pt' + fcs.paddingTop + '~mt' + fcs.marginTop);
       }
-      data.cols.push(entry);
     });
-    var hbs = document.querySelectorAll('.main [data-testid="stHorizontalBlock"]');
+    var hbs = doc.querySelectorAll('[data-testid="stHorizontalBlock"]');
     hbs.forEach(function(r, i) {
       if (i > 3) return;
-      var cs = window.getComputedStyle(r);
-      data.rows.push({i:i, ai:cs.alignItems, gap:cs.gap||cs.columnGap||'', top:Math.round(r.getBoundingClientRect().top)});
+      var cs = window.parent.getComputedStyle(r);
+      parts.push('hb' + i + '~ai' + cs.alignItems + '~gap' + (cs.gap||'') + '~t' + Math.round(r.getBoundingClientRect().top));
     });
-    fetch('http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362', {
-      method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({sessionId:'b70e7d',hypothesisId:'DOM-NOCORS',location:'app.py:st.html',message:'DOM probe',data:data,timestamp:Date.now()})
-    }).catch(function(e){ document.title='PROBE_ERR:'+e; });
+    new Image().src = 'http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362?sid=b70e7d&h=DOM&d=' + encodeURIComponent(parts.join('|'));
+  } catch(e) {
+    new Image().src = 'http://127.0.0.1:7248/ingest/da7ab6db-ef78-46a3-b363-ec5e729ab362?sid=b70e7d&h=ERR&msg=' + encodeURIComponent(e.message);
   }
-  setTimeout(probe, 4000);
-})();
-</script>""", unsafe_allow_javascript=True)
+}, 4000);
+</script>""", height=0)
     # #endregion
 
     with col1:
