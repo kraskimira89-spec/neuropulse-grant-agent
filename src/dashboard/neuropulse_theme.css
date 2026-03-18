@@ -87,6 +87,14 @@
   padding-top: 0 !important;
 }
 
+/* Блок-обёртка маркера (display:none) — без влияния на layout */
+.main .block-container [data-testid="stVerticalBlock"]:has(.np-dashboard-columns-marker) {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  line-height: 0 !important;
+}
+
 /* ── Основные колонки дашборда: ЛЕВАЯ И ПРАВАЯ — одинаковые отступы сверху ── */
 /* Обе колонки независимы, один и тот же набор правил для первой и второй */
 .main .block-container > div:has(.np-dashboard-columns-marker) + div [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
@@ -211,23 +219,21 @@ h3,
   box-shadow: var(--np-shadow-hover) !important;
 }
 
-/* Вертикальное выравнивание строки заголовка (название + стрелки + шестерёнка) */
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock,
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] {
+/* Вертикальное выравнивание строки заголовка (название + шестерёнка). Только прямой потомок > — не задеваем основные колонки дашборда */
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] {
   align-items: center !important;
 }
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock > [data-testid="stColumn"],
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
   justify-content: center !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h2,
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h3 {
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] h2,
+[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] h3 {
   margin: 0 !important;
   padding: 0 !important;
   line-height: 1.3 !important;
-  font-size: 1.5rem !important;   /* 24px — крупные названия блоков */
+  font-size: 1.5rem !important;
   font-weight: 600 !important;
 }
 

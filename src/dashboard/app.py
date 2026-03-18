@@ -102,41 +102,8 @@ def _inject_block_palette_css() -> None:
             f' border-color: {hdr_bg} !important;'
             f'}}'
         )
-    # Выравнивание строки заголовка и убирание лишних верхних отступов
-    header_align_css = """
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) {
-  padding-top: 0px !important;
-}
-/* Только сам маркер .np-bm-* — не скрываем родители, иначе пустой блок (календарь и др.) */
-[data-testid="stVerticalBlock"] [class^="np-bm-"] {
-  margin: 0 !important;
-  padding: 0 !important;
-  height: 0 !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
-  display: none !important;
-}
-/* Только заголовок блока (строка title+кнопки): не задеваем основные колонки дашборда — используем > (прямой потомок) */
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > .stHorizontalBlock,
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] {
-  align-items: center !important;
-}
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > .stHorizontalBlock > [data-testid="stColumn"],
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-  justify-content: center !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-}
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h2,
-[data-testid="stVerticalBlock"]:has([class^="np-bm-"]) .stHorizontalBlock h3 {
-  margin: 0 !important;
-  padding: 0 !important;
-  line-height: 1.3 !important;
-  font-size: 1.5rem !important;
-  font-weight: 600 !important;
-}
-"""
-    css = "\n".join(rules) + header_align_css
+    # Выравнивание заголовков и маркеры — в neuropulse_theme.css; здесь только палитра блоков
+    css = "\n".join(rules)
     st.markdown(f'<style id="np-block-palette">\n{css}\n</style>', unsafe_allow_html=True)
 
 
@@ -2441,26 +2408,26 @@ def _render_layout_editor() -> None:
                 title = registry[bid][0]
                 is_hid = bid in hidden_set
                 label = f"🙈 ~~{title}~~" if is_hid else f"• {title}"
-                a, b, c, d, e = st.columns([3, 1, 1, 1, 1])
-                with a:
+                # 4 колонки вместо 5: название | ↑↓ | → | 👁
+                name_col, updown_col, move_col, hide_col = st.columns([4, 1, 1, 1])
+                with name_col:
                     st.markdown(label)
-                with b:
+                with updown_col:
                     if i > 0 and st.button("↑", key=f"left_up_{bid}", help="Вверх"):
                         left_ids[i], left_ids[i - 1] = left_ids[i - 1], left_ids[i]
                         _save_dashboard_layout(left_ids, right_ids)
                         st.rerun()
-                with c:
                     if i < len(left_ids) - 1 and st.button("↓", key=f"left_down_{bid}", help="Вниз"):
                         left_ids[i], left_ids[i + 1] = left_ids[i + 1], left_ids[i]
                         _save_dashboard_layout(left_ids, right_ids)
                         st.rerun()
-                with d:
+                with move_col:
                     if st.button("→", key=f"left_to_right_{bid}", help="В правую колонку"):
                         left_ids.remove(bid)
                         right_ids.append(bid)
                         _save_dashboard_layout(left_ids, right_ids)
                         st.rerun()
-                with e:
+                with hide_col:
                     eye_label = "👁" if is_hid else "🙈"
                     eye_help = "Показать блок" if is_hid else "Скрыть блок"
                     if st.button(eye_label, key=f"left_hide_{bid}", help=eye_help):
@@ -2479,26 +2446,26 @@ def _render_layout_editor() -> None:
                 title = registry[bid][0]
                 is_hid = bid in hidden_set
                 label = f"🙈 ~~{title}~~" if is_hid else f"• {title}"
-                a, b, c, d, e = st.columns([3, 1, 1, 1, 1])
-                with a:
+                # 4 колонки вместо 5: название | ← | ↑↓ | 👁
+                name_col, move_col, updown_col, hide_col = st.columns([4, 1, 1, 1])
+                with name_col:
                     st.markdown(label)
-                with b:
+                with move_col:
                     if st.button("←", key=f"right_to_left_{bid}", help="В левую колонку"):
                         right_ids.remove(bid)
                         left_ids.append(bid)
                         _save_dashboard_layout(left_ids, right_ids)
                         st.rerun()
-                with c:
+                with updown_col:
                     if i > 0 and st.button("↑", key=f"right_up_{bid}", help="Вверх"):
                         right_ids[i], right_ids[i - 1] = right_ids[i - 1], right_ids[i]
                         _save_dashboard_layout(left_ids, right_ids)
                         st.rerun()
-                with d:
                     if i < len(right_ids) - 1 and st.button("↓", key=f"right_down_{bid}", help="Вниз"):
                         right_ids[i], right_ids[i + 1] = right_ids[i + 1], right_ids[i]
                         _save_dashboard_layout(left_ids, right_ids)
                         st.rerun()
-                with e:
+                with hide_col:
                     eye_label = "👁" if is_hid else "🙈"
                     eye_help = "Показать блок" if is_hid else "Скрыть блок"
                     if st.button(eye_label, key=f"right_hide_{bid}", help=eye_help):
@@ -2571,18 +2538,28 @@ def main() -> None:
     if "dashboard_hidden_blocks" not in st.session_state:
         st.session_state["dashboard_hidden_blocks"] = _load_hidden_blocks()
     hidden_blocks = st.session_state["dashboard_hidden_blocks"]
-
-    _render_layout_editor()
     st.session_state["dashboard_layout_left"] = left_ids
     st.session_state["dashboard_layout_right"] = right_ids
 
     registry = _get_block_registry()
-    # Маркер для CSS: только основные колонки дашборда стекаются на узком экране (не заголовок и не экспандер)
+
+    # Блок «Общая информация по гранту» — на всю ширину (1 строка = ширина 2 колонок)
+    if "grant_header" in registry and "grant_header" not in hidden_blocks:
+        if "grant_header" in left_ids or "grant_header" in right_ids:
+            st.session_state["dashboard_current_block"] = {"bid": "grant_header", "side": "full", "index": 0, "total": 1}
+            registry["grant_header"][1]()
+            st.divider()
+
+    # Маркер для CSS (display:none — в DOM для :has(), но без влияния на layout)
     st.markdown(
-        '<div class="np-dashboard-columns-marker" aria-hidden="true" style="height:0;overflow:hidden;margin:0;padding:0;line-height:0;"></div>',
+        '<div class="np-dashboard-columns-marker" aria-hidden="true" style="display:none;"></div>',
         unsafe_allow_html=True,
     )
     col1, col2 = st.columns(2)
+
+    # В колонках не показываем grant_header — он уже отрисован выше на всю ширину
+    left_ids = [b for b in left_ids if b != "grant_header"]
+    right_ids = [b for b in right_ids if b != "grant_header"]
 
     with col1:
         for i, bid in enumerate(left_ids):
@@ -2605,6 +2582,9 @@ def main() -> None:
             registry[bid][1]()
             if i < len(right_ids) - 1:
                 st.divider()
+
+    # Экспандер «Расположение блоков» — внизу, чтобы не создавать скрытые элементы между grant_header и колонками
+    _render_layout_editor()
 
 
 if __name__ == "__main__":
