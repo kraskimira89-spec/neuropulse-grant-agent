@@ -516,7 +516,7 @@ def block_schedule() -> None:
     _block_with_settings("📅 Ближайшие сроки по гранту", "schedule", _content_schedule, _settings_schedule)
 
 
-# ---------- Блок: Предстоящие задачи / напоминания ----------
+# ---------- Блок: Напоминания ----------
 def _settings_reminders(block_id: str) -> None:
     st.caption("Те же события, что в «Ближайшие сроки», с разметкой по срочности (за 7/3/1 дн., сегодня, просрочено).")
     min_year = st.number_input("Показывать события не раньше года", min_value=2020, max_value=2030, value=_get("dashboard_reminders_min_year", 2026), key=f"ni_reminders_min_year_{block_id}")
@@ -572,7 +572,7 @@ def _content_reminders(block_id: str) -> None:
 
 
 def block_reminders() -> None:
-    _block_with_settings("🔔 Предстоящие задачи / напоминания", "reminders", _content_reminders, _settings_reminders)
+    _block_with_settings("🔔 Напоминания", "reminders", _content_reminders, _settings_reminders)
 
 
 # ---------- Блок: Ключевые контрольные точки (ККТ), АНО «Гранты Ямала» ----------
