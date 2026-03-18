@@ -53,6 +53,7 @@ DOCUMENTS_ARCHIVE_EXAMPLE = PROJECT_ROOT / "data" / "grant_documents_archive.exa
 NOTIFICATION_SETTINGS_PATH = PROJECT_ROOT / "data" / "notification_settings.json"
 NOTIFICATION_SETTINGS_EXAMPLE = PROJECT_ROOT / "data" / "notification_settings.example.json"
 DASHBOARD_LAYOUT_PATH = PROJECT_ROOT / "data" / "dashboard_layout.json"
+MANUAL_CALENDAR_EVENTS_PATH = PROJECT_ROOT / "data" / "neuropulse_calendar_manual.json"
 
 # Папка «Паспорт»: паспорт проекта и краткая история диалогов (автосохранение раз в 15 мин)
 PASSPORT_DIR = PROJECT_ROOT / "Паспорт"
@@ -352,9 +353,10 @@ def _load_calendar_local(calendar_path: Path | None = None) -> list[dict]:
 
 
 def _load_schedule_events() -> list[dict]:
-    """Загружает события: из Яндекс Календаря (CalDAV) или из локального JSON — по настройке блока."""
+    """Загружает события: из Яндекс Календаря (CalDAV) или единый набор (грант + ККТ + этапы + импорт из календаря) — по настройке блока."""
     source = _get("dashboard_schedule_source", "local")
     days = _get("dashboard_schedule_days", 30)
+    min_year = _get("dashboard_schedule_min_year", 2026)
     today = datetime.utcnow().date()
     end = today + timedelta(days=days)
 
@@ -368,9 +370,7 @@ def _load_schedule_events() -> list[dict]:
             logger.warning("Ошибка загрузки из Яндекс Календаря: %s", e)
             return []
 
-    path_override = _get("dashboard_schedule_calendar_path", "")
-    path = Path(path_override) if path_override else None
-    return _load_calendar_local(path)
+    return _load_all_grant_and_kkt_events(days_ahead=days, min_year=min_year, force_local=True)
 
 
 def _settings_schedule(block_id: str) -> None:
@@ -703,6 +703,31 @@ def _load_all_grant_and_kkt_events(
             "source": "stage",
             "stage": stage_name,
         })
+    # События, импортированные из календаря Нейропульс (двусторонняя синхронизация)
+    if MANUAL_CALENDAR_EVENTS_PATH.exists():
+        try:
+            with open(MANUAL_CALENDAR_EVENTS_PATH, encoding="utf-8") as f:
+                manual_list = json.load(f)
+            for ev in (manual_list if isinstance(manual_list, list) else []):
+                date_s = (ev.get("date") or "").strip()[:10]
+                if not date_s:
+                    continue
+                try:
+                    d = datetime.strptime(date_s, "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                if d < cutoff or d < period_start or d > period_end:
+                    continue
+                out.append({
+                    "date": d.isoformat(),
+                    "title": (ev.get("title") or "Событие").strip(),
+                    "description": (ev.get("description") or "").strip(),
+                    "address": (ev.get("address") or "").strip(),
+                    "source": "manual",
+                    "stage": _get_stage_for_date(d, stage_ranges),
+                })
+        except Exception as e:
+            logger.warning("Ошибка чтения %s: %s", MANUAL_CALENDAR_EVENTS_PATH.name, e)
     out.sort(key=lambda x: (x["date"], x["title"]))
     return out
 
@@ -1353,7 +1378,12 @@ def _content_calendar_month(block_id: str) -> None:
     first = datetime(year, month, 1).date()
     last_day = cal_mod.monthrange(year, month)[1]
     last = datetime(year, month, last_day).date()
-    events = _load_all_grant_and_kkt_events(min_year=min_year, start_date=first, end_date=last)
+    events = _load_all_grant_and_kkt_events(
+        min_year=min_year,
+        start_date=first,
+        end_date=last,
+        force_local=True,
+    )
     min_date = datetime(min_year, 1, 1).date()
     import calendar
     cal = calendar.Calendar(firstweekday=0)
@@ -1411,6 +1441,17 @@ def _settings_neuropulse_cal(block_id: str) -> None:
     st.caption("Показываются все события гранта и ККТ с метками [Грант] / [ККТ]. Виджет — календарь Яндекса. После синхронизации события отображаются в сетке календаря.")
     st.divider()
     st.caption("**Синхронизация:** события гранта (grant_calendar.json), ККТ (grant_kkt.json) и даты этапов (grant_project_dashboard.json).")
+    if st.button("Очистить кэш отметок ✓", key=f"btn_clear_marks_cache_{block_id}", help="Удаляет локально сохранённые отметки и пересобирает их только по фактическому состоянию календаря."):
+        try:
+            from src.yandex_calendar_client import clear_persisted_event_keys
+            clear_persisted_event_keys()
+            for key in list(st.session_state.keys()):
+                if str(key).startswith("np_add_cal_ok_"):
+                    del st.session_state[key]
+            st.success("Кэш отметок очищен. После перезагрузки блока ✓ будут построены заново по данным календаря.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Ошибка очистки кэша: {e}")
     if st.button("Проверить подключение к CalDAV", key=f"btn_test_caldav_{block_id}", help="Проверяет доступ к календарю по YANDEX_CALENDAR_*."):
         try:
             from src.yandex_calendar_client import fetch_existing_event_keys, get_yandex_calendar_config
@@ -1444,7 +1485,7 @@ def _settings_neuropulse_cal(block_id: str) -> None:
 
 def _content_neuropulse_cal(block_id: str) -> None:
     try:
-        from src.yandex_calendar_client import get_yandex_calendar_config, push_grant_and_kkt_to_yandex_calendar
+        from src.yandex_calendar_client import get_yandex_calendar_config
     except ImportError:
         st.info("Модуль Яндекс Календаря недоступен.")
         return
@@ -1455,14 +1496,18 @@ def _content_neuropulse_cal(block_id: str) -> None:
     neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
     can_sync = bool(neuro_url and cfg.get("user") and cfg.get("password"))
 
-    # Автосинхронизация: при первом открытии блока выгружаем события гранта и ККТ в календарь (без дубликатов)
+    # Автосинхронизация: при первом открытии блока — двусторонняя синхронизация с календарём Нейропульс
     if _get("dashboard_neuropulse_auto_sync", True) and can_sync and not st.session_state.get("neuropulse_auto_synced"):
         try:
-            created, _errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url, skip_existing=True)
-            st.session_state["neuropulse_auto_synced"] = True
-            st.session_state["neuropulse_auto_sync_failed"] = False
-            if created > 0:
-                st.rerun()
+            from src.yandex_calendar_client import sync_neuropulse_calendar_state
+            result = sync_neuropulse_calendar_state(calendar_url=neuro_url)
+            if result.get("error"):
+                st.session_state["neuropulse_auto_sync_failed"] = True
+            else:
+                st.session_state["neuropulse_auto_synced"] = True
+                st.session_state["neuropulse_auto_sync_failed"] = False
+                if result.get("created", 0) + result.get("pulled", 0) > 0:
+                    st.rerun()
         except Exception:
             st.session_state["neuropulse_auto_sync_failed"] = True
 
@@ -1492,32 +1537,45 @@ def _content_neuropulse_cal(block_id: str) -> None:
     # Кнопки ручной синхронизации
     if st.session_state.get("neuropulse_auto_sync_failed"):
         st.warning("⚠️ Автосинхронизация не выполнилась. Нажмите «Синхронизировать», чтобы повторить.")
-    st.caption("События гранта, ККТ и даты этапов выгружаются в календарь при открытии блока (если включено) или по кнопке. Дубликаты не создаются.")
+    st.caption("Двусторонняя синхронизация: изменения из календаря подтягиваются в локальные данные, локальные — в календарь.")
     try:
-        from src.yandex_calendar_client import push_grant_and_kkt_to_yandex_calendar, sync_grant_and_kkt_with_calendar, get_yandex_calendar_config
+        from src.yandex_calendar_client import sync_neuropulse_calendar_state, load_registry, get_yandex_calendar_config
         cal_cfg = get_yandex_calendar_config()
         neuro_url = (cal_cfg.get("neuropulse_calendar_url") or cal_cfg.get("calendar_url") or "").strip()
         if neuro_url and cal_cfg.get("user") and cal_cfg.get("password"):
-            if st.button("Синхронизировать с календарём", key="btn_sync_neuropulse_content", type="primary", help="Добавляет отсутствующие события гранта и ККТ в Календарь Нейропульс. Существующие не дублируются."):
+            registry = load_registry()
+            last_sync = registry.get("last_sync")
+            if last_sync:
+                st.caption(f"Последняя синхронизация: {last_sync[:19].replace('T', ' ')}")
+            if st.button("Синхронизировать с календарём", key="btn_sync_neuropulse_content", type="primary", help="Двусторонняя синхронизация: локальные события и календарь Нейропульс."):
                 try:
-                    created, errors = push_grant_and_kkt_to_yandex_calendar(calendar_url=neuro_url, skip_existing=True)
-                    st.session_state["neuropulse_auto_synced"] = True
-                    st.session_state["neuropulse_auto_sync_failed"] = False
-                    st.success(f"Добавлено событий: {created}. Ошибок: {errors}. Обновите виджет выше или calendar.yandex.ru.")
-                    st.rerun()
+                    result = sync_neuropulse_calendar_state(calendar_url=neuro_url)
+                    err = result.get("error")
+                    if err:
+                        st.session_state["neuropulse_auto_sync_failed"] = True
+                        st.error(f"Ошибка синхронизации: {err}")
+                    else:
+                        st.session_state["neuropulse_auto_synced"] = True
+                        st.session_state["neuropulse_auto_sync_failed"] = False
+                        c, u, d, p = result.get("created", 0), result.get("updated", 0), result.get("deleted", 0), result.get("pulled", 0)
+                        st.success(f"Создано: {c}, обновлено: {u}, удалено: {d}, подтянуто из календаря: {p}. Обновите виджет выше или calendar.yandex.ru.")
+                        st.rerun()
                 except Exception as e:
                     st.session_state["neuropulse_auto_sync_failed"] = True
                     st.error(f"Ошибка синхронизации: {e}")
-            with st.expander("Полная синхронизация (добавить / обновить / удалить по локальным данным)"):
-                if st.button("Выполнить полную синхронизацию", key="btn_full_sync_neuropulse_content"):
+            with st.expander("Повторная двусторонняя синхронизация"):
+                if st.button("Выполнить синхронизацию", key="btn_full_sync_neuropulse_content"):
                     try:
-                        created, updated, deleted = sync_grant_and_kkt_with_calendar(calendar_url=neuro_url)
-                        st.session_state["neuropulse_auto_synced"] = True
-                        st.session_state["neuropulse_auto_sync_failed"] = False
-                        st.success(f"Создано: {created}, обновлено: {updated}, удалено: {deleted}. Обновите виджет выше или calendar.yandex.ru.")
-                        st.rerun()
+                        result = sync_neuropulse_calendar_state(calendar_url=neuro_url)
+                        if result.get("error"):
+                            st.error(f"Ошибка: {result['error']}")
+                        else:
+                            st.session_state["neuropulse_auto_synced"] = True
+                            st.session_state["neuropulse_auto_sync_failed"] = False
+                            c, u, d, p = result.get("created", 0), result.get("updated", 0), result.get("deleted", 0), result.get("pulled", 0)
+                            st.success(f"Создано: {c}, обновлено: {u}, удалено: {d}, подтянуто: {p}.")
+                            st.rerun()
                     except Exception as e:
-                        st.session_state["neuropulse_auto_sync_failed"] = True
                         st.error(f"Ошибка: {e}")
         else:
             st.caption("Задайте YANDEX_CALENDAR_NEUROPULSE_URL (или YANDEX_CALENDAR_URL), YANDEX_CALENDAR_USER и YANDEX_CALENDAR_APP_PASSWORD в .env для синхронизации.")
@@ -1547,7 +1605,11 @@ def _content_neuropulse_cal(block_id: str) -> None:
             get_yandex_calendar_config as _gcfg,
             event_matches_existing as _event_matches,
             fetch_existing_event_keys as _fetch_existing_keys,
+            load_persisted_event_keys as _load_cached_keys,
+            persist_event_keys as _persist_cached_keys,
+            remember_event_key as _remember_event_key,
         )
+        _existing_cal_keys = _load_cached_keys()
         _ncfg = _gcfg()
         _add_cal_neuro_url = (_ncfg.get("neuropulse_calendar_url") or _ncfg.get("calendar_url") or "").strip()
         _add_cal_available = bool(_add_cal_neuro_url and _ncfg.get("user") and _ncfg.get("password"))
@@ -1563,21 +1625,22 @@ def _content_neuropulse_cal(block_id: str) -> None:
                     from_date = min(dates_parsed)
                     to_date = max(dates_parsed)
                     keys, ok = _fetch_existing_keys(_add_cal_neuro_url, from_date, to_date)
-                    _existing_cal_keys = keys
+                    _existing_cal_keys |= keys
+                    _persist_cached_keys(_existing_cal_keys)
                     if not ok:
                         _fetch_cal_failed = True
             except (ValueError, Exception):
-                _existing_cal_keys = set()
                 _fetch_cal_failed = True
     except ImportError:
         pass
     if _fetch_cal_failed:
-        st.warning("⚠️ Невозможно проверить календарь (сбой подключения). Значки ✓ могут быть неточными; кнопка ＋ добавляет событие.")
+        st.warning("⚠️ Невозможно проверить календарь онлайн. Отметки ✓ показаны по сохранённому кэшу и могут быть не полностью актуальны.")
 
     _BADGE_COLORS = {
         "grant":  ("#e3f2fd", "#1565c0", "Грант"),
         "kkt":    ("#e8f5e9", "#2e7d32", "ККТ"),
         "stage":  ("#fff3e0", "#e65100", "Этап"),
+        "manual": ("#f3e5f5", "#7b1fa2", "Импорт"),
     }
 
     for idx, ev in enumerate(events):
@@ -1640,6 +1703,7 @@ def _content_neuropulse_cal(block_id: str) -> None:
                             save_to_json=False,
                         )
                         if _ok:
+                            _remember_event_key(_start, title)
                             st.session_state[ok_key] = True
                             st.rerun()
                         else:

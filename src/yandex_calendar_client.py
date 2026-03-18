@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
@@ -25,6 +27,9 @@ DEFAULT_EVENT_MATCH_THRESHOLDS = {
     "token_ratio_min": 0.6,
     "substring_ratio_min": 0.55,
 }
+EVENT_KEYS_CACHE_PATH = PROJECT_ROOT / "data" / "neuropulse_calendar_keys_cache.json"
+REGISTRY_PATH = PROJECT_ROOT / "data" / "neuropulse_calendar_registry.json"
+MANUAL_EVENTS_PATH = PROJECT_ROOT / "data" / "neuropulse_calendar_manual.json"
 
 
 def _load_dotenv() -> None:
@@ -69,6 +74,113 @@ def _get_event_match_thresholds() -> dict[str, float]:
         except (TypeError, ValueError):
             out[key] = default_value
     return out
+
+
+def load_persisted_event_keys() -> set[tuple[str, str]]:
+    """Читает локальный кэш ключей событий, уже подтверждённых в календаре."""
+    if not EVENT_KEYS_CACHE_PATH.exists():
+        return set()
+    try:
+        with open(EVENT_KEYS_CACHE_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception as e:
+        logger.warning("Не удалось прочитать кэш ключей календаря: %s", e)
+        return set()
+    out: set[tuple[str, str]] = set()
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        date_s = str(item.get("date") or "").strip()[:10]
+        title = str(item.get("title") or "")
+        if not date_s:
+            continue
+        try:
+            d = datetime.strptime(date_s, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        out.add(normalize_event_key(d, title))
+    return out
+
+
+def persist_event_keys(keys: set[tuple[str, str]]) -> None:
+    """Сохраняет локальный кэш ключей событий в JSON."""
+    try:
+        EVENT_KEYS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = [
+            {"date": d, "title": title}
+            for d, title in sorted(keys)
+        ]
+        with open(EVENT_KEYS_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning("Не удалось сохранить кэш ключей календаря: %s", e)
+
+
+def remember_event_key(d: date, title: str) -> None:
+    """Добавляет одно событие в локальный кэш подтверждённых событий."""
+    keys = load_persisted_event_keys()
+    keys.add(normalize_event_key(d, title))
+    persist_event_keys(keys)
+
+
+def clear_persisted_event_keys() -> None:
+    """Удаляет локальный кэш подтверждённых событий."""
+    try:
+        if EVENT_KEYS_CACHE_PATH.exists():
+            EVENT_KEYS_CACHE_PATH.unlink()
+    except Exception as e:
+        logger.warning("Не удалось очистить кэш ключей календаря: %s", e)
+
+
+# ---------- Реестр соответствий local_event <-> remote_event (двусторонняя синхронизация) ----------
+def _event_content_hash(payload: dict[str, Any]) -> str:
+    """Хеш содержимого события для обнаружения изменений."""
+    key = "|".join([
+        str(payload.get("date", "")),
+        str(payload.get("title", "")),
+        str(payload.get("description", "")),
+        str(payload.get("address", "")),
+        str(payload.get("end", "")),
+        str(payload.get("rrule", "")),
+    ])
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _canonical_event_id(source_type: str, date_s: str, title: str, description: str, ref_extra: str = "") -> str:
+    """Детерминированный event_id для локального события."""
+    raw = f"{source_type}|{date_s}|{title}|{description}|{ref_extra}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def load_registry() -> dict[str, Any]:
+    """Читает реестр соответствий local_event <-> remote_event."""
+    if not REGISTRY_PATH.exists():
+        return {"last_sync": None, "entries": []}
+    try:
+        with open(REGISTRY_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        logger.warning("Не удалось прочитать реестр календаря: %s", e)
+        return {"last_sync": None, "entries": []}
+    return {
+        "last_sync": data.get("last_sync"),
+        "entries": data.get("entries") or [],
+    }
+
+
+def save_registry(registry: dict[str, Any]) -> None:
+    """Сохраняет реестр в JSON."""
+    try:
+        REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(REGISTRY_PATH, "w", encoding="utf-8") as f:
+            json.dump(
+                {"last_sync": registry.get("last_sync"), "entries": registry.get("entries") or []},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except Exception as e:
+        logger.warning("Не удалось сохранить реестр календаря: %s", e)
 
 
 def is_configured() -> bool:
@@ -716,6 +828,149 @@ def push_grant_and_kkt_to_yandex_calendar(
     return created, errors
 
 
+def _load_local_events_canonical() -> list[dict[str, Any]]:
+    """
+    Собирает локальные события с каноническими полями: event_id, source_type, source_ref, date, title, description, address, uid?, rrule?, end?.
+    Используется для двусторонней синхронизации с реестром.
+    """
+    import json
+    cutoff = date(2026, 1, 1)
+    out: list[dict[str, Any]] = []
+    # grant_calendar.json
+    for path in (PROJECT_ROOT / "data" / "grant_calendar.json", PROJECT_ROOT / "data" / "grant_calendar.example.json"):
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            for i, ev in enumerate(data if isinstance(data, list) else []):
+                d_str = (ev.get("date") or "")[:10]
+                if not d_str:
+                    continue
+                try:
+                    d = datetime.strptime(d_str, "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                if d < cutoff:
+                    continue
+                title = (ev.get("title") or "Событие").strip()
+                desc = (ev.get("description") or "").strip()
+                event_id = _canonical_event_id("grant", d_str, title, desc, f"grant_calendar|{i}")
+                item = {
+                    "event_id": event_id,
+                    "source_type": "grant",
+                    "source_ref": f"grant_calendar|{i}",
+                    "date": d_str,
+                    "title": title,
+                    "description": desc,
+                    "address": (ev.get("address") or "").strip(),
+                }
+                if ev.get("uid"):
+                    item["uid"] = (ev.get("uid") or "").strip()
+                if ev.get("rrule"):
+                    item["rrule"] = (ev.get("rrule") or "").strip()
+                end_str = (ev.get("end") or "")[:10]
+                if end_str:
+                    item["end"] = end_str
+                out.append(item)
+        except Exception as e:
+            logger.warning("Ошибка чтения %s: %s", path.name, e)
+        break
+    # grant_kkt.json
+    for path in (PROJECT_ROOT / "data" / "grant_kkt.json", PROJECT_ROOT / "data" / "grant_kkt.example.json"):
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            points = data.get("points", data) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            for i, p in enumerate(points):
+                d_str = (p.get("date_end") or "")[:10]
+                if not d_str:
+                    continue
+                try:
+                    d = datetime.strptime(d_str, "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                if d < cutoff:
+                    continue
+                desc = (p.get("description") or "").strip()
+                expected = (p.get("expected_result") or "").strip()
+                title = f"ККТ: {desc}" if desc else "ККТ"
+                body = f"Ожидаемый результат: {expected}" if expected else ""
+                event_id = _canonical_event_id("kkt", d_str, title, body, f"kkt|{i}")
+                out.append({
+                    "event_id": event_id,
+                    "source_type": "kkt",
+                    "source_ref": f"grant_kkt|{i}",
+                    "date": d_str,
+                    "title": title,
+                    "description": body,
+                    "address": "",
+                })
+        except Exception as e:
+            logger.warning("Ошибка чтения %s: %s", path.name, e)
+        break
+    # Этапы гранта
+    for path in (PROJECT_ROOT / "data" / "grant_project_dashboard.json", PROJECT_ROOT / "data" / "grant_project_dashboard.example.json"):
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            for si, s in enumerate(data.get("stages") or []):
+                stage = (s.get("stage") or "").strip()
+                activity = (s.get("activity") or "").strip()
+                for label, date_key in (("начало", "plan_start"), ("окончание", "plan_end")):
+                    date_s = (s.get(date_key) or "").strip()[:10]
+                    if not date_s:
+                        continue
+                    try:
+                        d = datetime.strptime(date_s, "%Y-%m-%d").date()
+                    except ValueError:
+                        continue
+                    if d < cutoff:
+                        continue
+                    title = f"Этап: {stage} — {activity} ({label})" if activity else f"Этап: {stage} ({label})"
+                    event_id = _canonical_event_id("stage", date_s, title, stage, f"stage|{si}|{date_key}")
+                    out.append({
+                        "event_id": event_id,
+                        "source_type": "stage",
+                        "source_ref": f"grant_project_dashboard|stages|{si}|{date_key}",
+                        "date": date_s,
+                        "title": title,
+                        "description": f"Этап: {stage}",
+                        "address": "",
+                    })
+        except Exception as e:
+            logger.warning("Ошибка чтения %s: %s", path.name, e)
+        break
+    # Импортированные вручную из календаря (manual)
+    if MANUAL_EVENTS_PATH.exists():
+        try:
+            with open(MANUAL_EVENTS_PATH, encoding="utf-8") as f:
+                manual_list = json.load(f)
+            for i, ev in enumerate(manual_list if isinstance(manual_list, list) else []):
+                d_str = (ev.get("date") or "")[:10]
+                if not d_str:
+                    continue
+                title = (ev.get("title") or "Событие").strip()
+                desc = (ev.get("description") or "").strip()
+                event_id = ev.get("event_id") or _canonical_event_id("manual", d_str, title, desc, str(i))
+                out.append({
+                    "event_id": event_id,
+                    "source_type": "manual",
+                    "source_ref": f"manual|{i}",
+                    "date": d_str,
+                    "title": title,
+                    "description": desc,
+                    "address": (ev.get("address") or "").strip(),
+                })
+        except Exception as e:
+            logger.warning("Ошибка чтения %s: %s", MANUAL_EVENTS_PATH.name, e)
+    return out
+
+
 def _load_local_events_for_sync() -> list[dict[str, Any]]:
     """
     Собирает объединённый список локальных событий из grant_calendar.json и grant_kkt.json (с 2026 года).
@@ -953,3 +1208,272 @@ def _event_end_from_cal(cal_ev: dict) -> str:
         except ValueError:
             pass
     return ""
+
+
+def _update_local_grant_event(index: int, date_s: str, title: str, description: str, address: str) -> bool:
+    """Обновляет событие в grant_calendar.json по индексу. Возвращает True при успехе."""
+    path = PROJECT_ROOT / "data" / "grant_calendar.json"
+    if not path.exists():
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list) or index < 0 or index >= len(data):
+            return False
+        data[index]["date"] = date_s[:10]
+        data[index]["title"] = title
+        data[index]["description"] = description
+        data[index]["address"] = address
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.warning("Ошибка обновления grant_calendar: %s", e)
+        return False
+
+
+def _append_manual_event(event_id: str, date_s: str, title: str, description: str, address: str) -> str:
+    """Добавляет событие, импортированное из календаря, в neuropulse_calendar_manual.json. Возвращает source_ref вида manual|{index}."""
+    try:
+        REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        items = []
+        if MANUAL_EVENTS_PATH.exists():
+            try:
+                with open(MANUAL_EVENTS_PATH, encoding="utf-8") as f:
+                    items = json.load(f)
+            except Exception:
+                pass
+        if not isinstance(items, list):
+            items = []
+        items.append({
+            "event_id": event_id,
+            "date": date_s[:10],
+            "title": title,
+            "description": description,
+            "address": address,
+        })
+        with open(MANUAL_EVENTS_PATH, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
+        return f"manual|{len(items) - 1}"
+    except Exception as e:
+        logger.warning("Ошибка записи manual событий: %s", e)
+    return f"manual|0"
+
+
+def _update_manual_event(index: int, date_s: str, title: str, description: str, address: str) -> bool:
+    """Обновляет событие в neuropulse_calendar_manual.json по индексу."""
+    if not MANUAL_EVENTS_PATH.exists():
+        return False
+    try:
+        with open(MANUAL_EVENTS_PATH, encoding="utf-8") as f:
+            items = json.load(f)
+        if not isinstance(items, list) or index < 0 or index >= len(items):
+            return False
+        items[index].update({
+            "date": date_s[:10],
+            "title": title,
+            "description": description,
+            "address": address,
+        })
+        with open(MANUAL_EVENTS_PATH, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.warning("Ошибка обновления manual событий: %s", e)
+        return False
+
+
+def sync_neuropulse_calendar_state(
+    calendar_url: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> dict[str, Any]:
+    """
+    Двусторонняя синхронизация: локальные данные и Яндекс Календарь Нейропульс.
+    Читает локальные события (с event_id), remote-события, реестр; выполняет reconcile remote->local, затем local->remote; обновляет реестр.
+    Возвращает dict: created, updated, deleted, pulled, conflicts, error (при сбое).
+    """
+    from datetime import timedelta
+    cfg = get_yandex_calendar_config()
+    url = (calendar_url or "").strip() or cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or ""
+    if not url or not cfg["user"] or not cfg["password"]:
+        return {"created": 0, "updated": 0, "deleted": 0, "pulled": 0, "conflicts": 0, "error": "Не задан calendar_url или учётные данные"}
+    local_list = _load_local_events_canonical()
+    range_start = from_date or date.today()
+    range_end = to_date or (range_start + timedelta(days=365))
+    if local_list:
+        min_d = min(datetime.strptime(ev["date"][:10], "%Y-%m-%d").date() for ev in local_list)
+        max_d = max(datetime.strptime(ev["date"][:10], "%Y-%m-%d").date() for ev in local_list)
+        range_start = min(range_start, min_d)
+        range_end = max(range_end, max_d + timedelta(days=31))
+    errors: list[Exception] = []
+    cal_events = fetch_calendar_events_with_urls(url=url, from_date=range_start, to_date=range_end, _out_errors=errors)
+    if errors:
+        return {"created": 0, "updated": 0, "deleted": 0, "pulled": 0, "conflicts": 0, "error": str(errors[0])}
+    registry = load_registry()
+    entries: list[dict[str, Any]] = list(registry.get("entries") or [])
+    by_event_id: dict[str, dict] = {e["event_id"]: e for e in entries if e.get("event_id")}
+    by_remote_uid: dict[str, dict] = {e["remote_uid"]: e for e in entries if e.get("remote_uid")}
+    by_remote_url: dict[str, dict] = {e["remote_url"]: e for e in entries if e.get("remote_url")}
+    local_by_id: dict[str, dict] = {ev["event_id"]: ev for ev in local_list}
+    cal_by_url: dict[str, dict] = {c.get("url", ""): c for c in cal_events if c.get("url")}
+    created, updated, deleted, pulled, conflicts = 0, 0, 0, 0, 0
+
+    # 1) Reconcile remote -> local: изменения из календаря подтягиваем в локальные данные
+    for cal_ev in cal_events:
+        remote_uid = (cal_ev.get("uid") or "").strip()
+        remote_url = (cal_ev.get("url") or "").strip()
+        remote_hash = _event_content_hash(cal_ev)
+        entry = by_remote_uid.get(remote_uid) or by_remote_url.get(remote_url)
+        if entry:
+            event_id = entry.get("event_id")
+            local_ev = local_by_id.get(event_id) if event_id else None
+            if local_ev:
+                local_hash = _event_content_hash(local_ev)
+                if entry.get("last_seen_remote_hash") != remote_hash:
+                    source_ref = entry.get("source_ref") or ""
+                    if source_ref.startswith("grant_calendar|"):
+                        try:
+                            idx = int(source_ref.split("|")[1])
+                            if _update_local_grant_event(
+                                idx,
+                                (cal_ev.get("date") or "")[:10],
+                                (cal_ev.get("title") or "").strip(),
+                                (cal_ev.get("description") or "").strip(),
+                                (cal_ev.get("address") or "").strip(),
+                            ):
+                                pulled += 1
+                        except (ValueError, IndexError):
+                            pass
+                    elif source_ref.startswith("manual|"):
+                        try:
+                            idx = int(source_ref.split("|")[1])
+                            if _update_manual_event(
+                                idx,
+                                (cal_ev.get("date") or "")[:10],
+                                (cal_ev.get("title") or "").strip(),
+                                (cal_ev.get("description") or "").strip(),
+                                (cal_ev.get("address") or "").strip(),
+                            ):
+                                pulled += 1
+                        except (ValueError, IndexError):
+                            pass
+                entry["last_seen_remote_hash"] = remote_hash
+                entry["last_seen_local_hash"] = _event_content_hash(local_ev) if local_ev else ""
+                entry["remote_uid"] = remote_uid
+                entry["remote_url"] = remote_url
+                entry["status"] = "synced"
+            continue
+        if not remote_uid and not remote_url:
+            continue
+        new_event_id = f"manual|{remote_uid or remote_url[:32]}"
+        source_ref = _append_manual_event(
+            new_event_id,
+            (cal_ev.get("date") or "")[:10],
+            (cal_ev.get("title") or "").strip(),
+            (cal_ev.get("description") or "").strip(),
+            (cal_ev.get("address") or "").strip(),
+        )
+        pulled += 1
+        entries.append({
+            "event_id": new_event_id,
+            "source_type": "manual",
+            "source_ref": source_ref,
+            "remote_uid": remote_uid,
+            "remote_url": remote_url,
+            "last_seen_local_hash": "",
+            "last_seen_remote_hash": remote_hash,
+            "status": "imported",
+        })
+        by_event_id[new_event_id] = entries[-1]
+        by_remote_uid[remote_uid] = entries[-1]
+        by_remote_url[remote_url] = entries[-1]
+
+    # 2) Reconcile local -> remote: создаём/обновляем/удаляем в календаре
+    local_list = _load_local_events_canonical()
+    local_by_id = {ev["event_id"]: ev for ev in local_list}
+    matched_cal_urls: set[str] = set()
+    for ev in local_list:
+        event_id = ev["event_id"]
+        d = datetime.strptime(ev["date"][:10], "%Y-%m-%d").date()
+        entry = by_event_id.get(event_id)
+        cal_ev = None
+        if entry:
+            cal_ev = cal_by_url.get(entry.get("remote_url", "")) if entry.get("remote_url") else None
+        if cal_ev:
+            matched_cal_urls.add(cal_ev["url"])
+            local_hash = _event_content_hash(ev)
+            if entry.get("last_seen_local_hash") != local_hash:
+                delete_event(url, cal_ev["url"])
+                use_uid = cal_ev.get("uid") or ev.get("uid")
+                end_d = None
+                if ev.get("end"):
+                    try:
+                        end_d = datetime.strptime(ev["end"][:10], "%Y-%m-%d").date()
+                    except ValueError:
+                        pass
+                ok, _ = create_event(
+                    url, d, ev["title"], ev.get("description") or "", ev.get("address") or "",
+                    uid=use_uid, rrule=ev.get("rrule") or None, end_date=end_d,
+                )
+                if ok:
+                    updated += 1
+                if entry:
+                    entry["last_seen_local_hash"] = local_hash
+                    entry["last_seen_remote_hash"] = _event_content_hash(cal_ev)
+            continue
+        end_d = None
+        if ev.get("end"):
+            try:
+                end_d = datetime.strptime(ev["end"][:10], "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        ok, used_uid = create_event(
+            url, d, ev["title"], ev.get("description") or "", ev.get("address") or "",
+            uid=ev.get("uid"), rrule=ev.get("rrule") or None, end_date=end_d,
+        )
+        if ok:
+            created += 1
+            cal_events_new = fetch_calendar_events_with_urls(url=url, from_date=d, to_date=d)
+            new_cal = None
+            for c in cal_events_new:
+                if (c.get("uid") == used_uid or (c.get("date") or "")[:10] == ev["date"][:10] and key_matches_existing(normalize_event_key(d, ev["title"]), {_normalize_key(d, c.get("title") or "")})):
+                    new_cal = c
+                    break
+            remote_url = (new_cal.get("url") or "").strip() if new_cal else ""
+            new_entry = {
+                "event_id": event_id,
+                "source_type": ev.get("source_type", "grant"),
+                "source_ref": ev.get("source_ref", ""),
+                "remote_uid": used_uid or "",
+                "remote_url": remote_url,
+                "last_seen_local_hash": _event_content_hash(ev),
+                "last_seen_remote_hash": _event_content_hash(new_cal) if new_cal else "",
+                "status": "synced",
+            }
+            entries.append(new_entry)
+            by_event_id[event_id] = new_entry
+            if used_uid:
+                by_remote_uid[used_uid] = new_entry
+            if remote_url:
+                by_remote_url[remote_url] = new_entry
+
+    removed_urls: set[str] = set()
+    for cal_ev in cal_events:
+        remote_url = (cal_ev.get("url") or "").strip()
+        if not remote_url or remote_url in matched_cal_urls:
+            continue
+        entry = by_remote_url.get(remote_url)
+        if not entry:
+            continue
+        event_id = entry.get("event_id")
+        if event_id and event_id not in local_by_id:
+            if delete_event(url, remote_url):
+                deleted += 1
+                removed_urls.add(remote_url)
+    entries = [e for e in entries if e.get("remote_url") not in removed_urls]
+
+    registry["entries"] = entries
+    registry["last_sync"] = datetime.utcnow().isoformat() + "Z"
+    save_registry(registry)
+    return {"created": created, "updated": updated, "deleted": deleted, "pulled": pulled, "conflicts": conflicts}
