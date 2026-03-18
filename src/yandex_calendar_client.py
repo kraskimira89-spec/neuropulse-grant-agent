@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+from difflib import SequenceMatcher
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -284,22 +286,49 @@ def _normalize_key(d: date, title: str) -> tuple[str, str]:
     return (d.isoformat(), _normalize_title(title))
 
 
+def _title_tokens(title: str) -> set[str]:
+    """Выделяет значимые токены из названия для мягкого сравнения."""
+    tokens = set(re.findall(r"[a-zа-я0-9]+", title, flags=re.IGNORECASE))
+    stopwords = {
+        "этап", "ккт", "грант", "событие",
+        "начало", "окончание", "start", "end",
+    }
+    return {t for t in tokens if len(t) >= 3 and t not in stopwords}
+
+
 def key_matches_existing(key: tuple[str, str], existing_keys: set[tuple[str, str]]) -> bool:
     """
     Проверяет, есть ли ключ в множестве (точное совпадение или мягкое).
-    Мягкое: та же дата + одна нормализованная строка содержит другую (мин. 4 символа).
+    Мягкое: та же дата + проверка по токенам и коэффициенту похожести строк.
     """
     if key in existing_keys:
         return True
     date_part, norm = key
     if len(norm) < 4:
         return False
+    norm_tokens = _title_tokens(norm)
     for (d, t) in existing_keys:
         if d != date_part:
             continue
-        if len(t) < 4:
+        if not t or len(t) < 4:
             continue
-        if norm in t or t in norm:
+
+        if norm == t:
+            return True
+
+        ratio = SequenceMatcher(None, norm, t).ratio()
+        if ratio >= 0.92:
+            return True
+
+        t_tokens = _title_tokens(t)
+        if norm_tokens and t_tokens:
+            common = len(norm_tokens & t_tokens)
+            overlap = common / min(len(norm_tokens), len(t_tokens))
+            if overlap >= 0.8 and ratio >= 0.6:
+                return True
+
+        short, long = (norm, t) if len(norm) <= len(t) else (t, norm)
+        if len(short) >= 10 and short in long and ratio >= 0.55:
             return True
     return False
 

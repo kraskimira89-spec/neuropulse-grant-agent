@@ -1452,6 +1452,7 @@ def _content_neuropulse_cal(block_id: str) -> None:
     embed_url = (cfg.get("neuropulse_embed_url") or "").strip()
     neuro_url = (cfg.get("neuropulse_calendar_url") or cfg.get("calendar_url") or "").strip()
     can_sync = bool(neuro_url and cfg.get("user") and cfg.get("password"))
+    _fetch_cal_failed = False
 
     # Автосинхронизация: при первом открытии блока выгружаем события гранта и ККТ в календарь (без дубликатов)
     if _get("dashboard_neuropulse_auto_sync", True) and can_sync and not st.session_state.get("neuropulse_auto_synced"):
@@ -1526,8 +1527,6 @@ def _content_neuropulse_cal(block_id: str) -> None:
     # force_local=True — всегда из локальных файлов, не зависит от настройки источника «Яндекс Календарь».
     st.markdown("**📅 Все события гранта и ККТ** (отмечены в календаре после синхронизации)")
     st.caption("Цвет фона: Блок 1 — голубой, Блок 2 — зелёный, Блок 3 — оранжевый.")
-    if _fetch_cal_failed:
-        st.warning("⚠️ Невозможно проверить календарь (сбой подключения). Значки ✓ могут быть неточными; кнопка ＋ добавляет событие.")
     days = _get("dashboard_neuropulse_days", 60)
     min_year = _get("dashboard_neuropulse_min_year", 2026)
     show_desc = _get("dashboard_neuropulse_show_desc", True)
@@ -1572,6 +1571,8 @@ def _content_neuropulse_cal(block_id: str) -> None:
                 _fetch_cal_failed = True
     except ImportError:
         pass
+    if _fetch_cal_failed:
+        st.warning("⚠️ Невозможно проверить календарь (сбой подключения). Значки ✓ могут быть неточными; кнопка ＋ добавляет событие.")
 
     _BADGE_COLORS = {
         "grant":  ("#e3f2fd", "#1565c0", "Грант"),
